@@ -16,11 +16,14 @@ insert into node_geometry (node_id, point)
 drop table if exists way_nodes;
 create table way_nodes (
        way_id bigint,
-       node_id bigint
+       node_id bigint,
+       order_nr int
 );
 
-insert into way_nodes (way_id, node_id)
-       select id, unnest(nodes) from planet_osm_ways;
+/* postgresql! yay! */
+insert into way_nodes (way_id, node_id, order_nr)
+       select id, unnest(nodes), generate_subscripts(nodes, 1)
+              from planet_osm_ways;
 
 drop table if exists way_geometry;
 create table way_geometry (
@@ -29,7 +32,7 @@ create table way_geometry (
 );
 
 insert into way_geometry
-       select id, st_makeline(array_agg(n.point))
+       select id, st_makeline(array_agg(n.point order by ng.order_nr))
               from planet_osm_ways w
               /* nb - does the following line keep the node order? */
               join way_nodes ng on ng.way_id = w.id
@@ -55,11 +58,14 @@ insert into relation_member (relation_id, member_type, member_id, member_role)
                     from planet_osm_rels
        ) s;
 
+/*
 copy (
      select member_role, count(*) from relation_member group by member_role
 ) to '/home/bart/Data/power-rels-members.csv' with csv header;
-
+*/
 /* lookup table for power types */
+drop table if exists power_type_names;
+
 create table power_type_names (
        power_name VARCHAR(64) PRIMARY KEY,
        power_type CHAR(1) NOT NULL,
@@ -114,6 +120,8 @@ insert into power_station (
                       where power_type = 's'
          );
 
+
+drop table if exists power_line;
 create table power_line (
        osm_id bigint,
        osm_type char(1) not null,
