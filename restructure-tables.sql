@@ -58,11 +58,7 @@ insert into relation_member (relation_id, member_type, member_id, member_role)
                     from planet_osm_rels
        ) s;
 
-/*
-copy (
-     select member_role, count(*) from relation_member group by member_role
-) to '/home/bart/Data/power-rels-members.csv' with csv header;
-*/
+
 /* lookup table for power types */
 drop table if exists power_type_names;
 
@@ -82,7 +78,6 @@ insert into power_type_names (power_name, power_type)
               ('line', 'l'),
               ('minor_cable', 'l'),
               ('minor_line', 'l');
-
 
 
 drop table if exists power_station;
