@@ -45,7 +45,7 @@ create table relation_member (
        member_type char(1) not null,
        member_id bigint not null,
        member_role varchar(64) null,
-       foreign key (relation_id) references planet_osm_rels
+       foreign key (relation_id) references planet_osm_rels (id)
 );
 
 /* TODO: figure out how to compute relation geometry, given that it
@@ -79,6 +79,17 @@ insert into power_type_names (power_name, power_type)
               ('minor_cable', 'l'),
               ('minor_line', 'l');
 
+
+drop table if exists electrical_properties;
+
+create table electrical_properties (
+       osm_id bigint not null,
+       osm_type char (1),
+       frequency float null,
+       voltage int null,
+       wires int null,
+       check (osm_type in ('w','l','r')
+);
 
 drop table if exists power_station;
 create table power_station (
