@@ -7,6 +7,7 @@ create table node_geometry (
        node_id bigint,
        point   geometry(point)
 );
+
 insert into node_geometry (node_id, point)
        select id, st_setsrid(st_makepoint(lon, lat), 4326)
               from planet_osm_nodes;
@@ -85,13 +86,17 @@ drop table if exists electrical_properties;
 create table electrical_properties (
        osm_id bigint not null,
        osm_type char (1),
+       part_nr int default 0,
        frequency float null,
        voltage int null,
        wires int null,
-       check (osm_type in ('w','l','r')
+       cables int null,
+       check (osm_type in ('w','l','r'))
 );
 
+drop index if exists power_station_location;
 drop table if exists power_station;
+
 create table power_station (
        osm_id bigint,
        osm_type char(1) not null,
@@ -126,7 +131,7 @@ insert into power_station (
                       where power_type = 's'
          );
 
-
+drop index if exists power_line_extent;
 drop table if exists power_line;
 create table power_line (
        osm_id bigint,
@@ -138,6 +143,9 @@ create table power_line (
        check (osm_type in ('w','r'))
 );
 
+
+
+
 insert into power_line (
        osm_id, osm_type, power_name, tags, extent
 ) select id, 'w', hstore(tags)->'power', hstore(tags), g.line
@@ -147,4 +155,15 @@ insert into power_line (
                select power_name from power_type_names where power_type = 'l'
          );
 
+/* not necessary if we're going to use buffered versions of the
+   geometries; nb that for buffering it might be quite a good idea to
+   translate to a meter-based geometry system anyway, or to a
+   geography system. */
+
+create index power_station_location on power_station using gist(location);
+create index power_line_extent on power_line using gist(extent);
 commit;
+
+/* speed up queries even further !!!!! */
+vacuum analyze power_line;
+vacuum analyze power_station;
