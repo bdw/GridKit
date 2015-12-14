@@ -43,17 +43,15 @@ insert into way_geometry
 drop table if exists relation_member;
 create table relation_member (
        relation_id bigint,
-       member_type char(1) not null,
-       member_id bigint not null,
+       member_id   varchar(64) not null,
        member_role varchar(64) null,
        foreign key (relation_id) references planet_osm_rels (id)
 );
 
 /* TODO: figure out how to compute relation geometry, given that it
    may be recursive! */
-insert into relation_member (relation_id, member_type, member_id, member_role)
-       select s.pid, substring(s.mid, 1, 1),
-                     substring(s.mid, 2)::bigint, s.mrole from (
+insert into relation_member (relation_id, member_id, member_role)
+       select s.pid, s.mid, s.mrole from (
               select id as pid, unnest(akeys(hstore(members))) as mid,
                                 unnest(avals(hstore(members))) as mrole
                     from planet_osm_rels
@@ -64,9 +62,9 @@ insert into relation_member (relation_id, member_type, member_id, member_role)
 drop table if exists power_type_names;
 
 create table power_type_names (
-       power_name VARCHAR(64) PRIMARY KEY,
-       power_type CHAR(1) NOT NULL,
-       CHECK (power_type in ('s','l','r'))
+       power_name varchar(64) primary key,
+       power_type char(1) not null,
+       check (power_type in ('s','l','r'))
 );
 
 insert into power_type_names (power_name, power_type)
@@ -84,13 +82,12 @@ insert into power_type_names (power_name, power_type)
 drop table if exists electrical_properties;
 
 create table electrical_properties (
-       osm_id bigint not null,
-       osm_type char (1),
+       osm_id varchar(20),
        part_nr int default 0,
        frequency float null,
        voltage int null,
-       wires int null,
-       cables int null,
+       conductor_bundles int null,
+       subconductors int null,
        check (osm_type in ('w','l','r'))
 );
 
@@ -98,19 +95,17 @@ drop index if exists power_station_location;
 drop table if exists power_station;
 
 create table power_station (
-       osm_id bigint,
-       osm_type char(1) not null,
+       osm_id varchar(64) not null,
        power_name varchar(64) not null,
        tags hstore,
        location geometry,
-       primary key (osm_id, osm_type),
-       check (osm_type in ('n','w','r'))
+       primary key (osm_id)
 );
 
 
 insert into power_station (
-       osm_id, osm_type, power_name, tags, location
-) select id, 'n', hstore(tags)->'power', hstore(tags), g.point
+       osm_id, power_name, tags, location
+) select concat('n', id), hstore(tags)->'power', hstore(tags), g.point
            from planet_osm_nodes n
            join node_geometry g on g.node_id = n.id
            where hstore(tags)->'power' in (
@@ -119,8 +114,8 @@ insert into power_station (
          );
 
 insert into power_station (
-       osm_id, osm_type, power_name, tags, location
-) select id, 'w', hstore(tags)->'power', hstore(tags),
+       osm_id, power_name, tags, location
+) select concat('w', id), hstore(tags)->'power', hstore(tags),
          case when St_IsClosed(g.line)
               then St_MakePolygon(g.line)
               else g.line end
@@ -134,21 +129,18 @@ insert into power_station (
 drop index if exists power_line_extent;
 drop table if exists power_line;
 create table power_line (
-       osm_id bigint,
-       osm_type char(1) not null,
+       osm_id varchar(64),
        power_name varchar(64) not null,
        tags hstore,
        extent geometry,
-       primary key (osm_id, osm_type),
-       check (osm_type in ('w','r'))
+       primary key (osm_id)
 );
 
 
 
-
 insert into power_line (
-       osm_id, osm_type, power_name, tags, extent
-) select id, 'w', hstore(tags)->'power', hstore(tags), g.line
+       osm_id, power_name, tags, extent
+) select concat('w', id), hstore(tags)->'power', hstore(tags), g.line
          from planet_osm_ways w
          join way_geometry g on g.way_id = w.id
          where hstore(tags)->'power' in (
