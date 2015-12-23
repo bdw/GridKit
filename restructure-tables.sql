@@ -87,11 +87,9 @@ create table electrical_properties (
        frequency float null,
        voltage int null,
        conductor_bundles int null,
-       subconductors int null,
-       check (osm_type in ('w','l','r'))
+       subconductors int null
 );
 
-drop index if exists power_station_location;
 drop table if exists power_station;
 
 create table power_station (
@@ -126,13 +124,12 @@ insert into power_station (
                       where power_type = 's'
          );
 
-drop index if exists power_line_extent;
 drop table if exists power_line;
 create table power_line (
        osm_id varchar(64),
        power_name varchar(64) not null,
        tags hstore,
-       extent geometry,
+       extent geometry(linestring),
        primary key (osm_id)
 );
 
@@ -152,10 +149,7 @@ insert into power_line (
    translate to a meter-based geometry system anyway, or to a
    geography system. */
 
-create index power_station_location on power_station using gist(location);
-create index power_line_extent on power_line using gist(extent);
 commit;
 
-/* speed up queries even further !!!!! */
 vacuum analyze power_line;
 vacuum analyze power_station;
