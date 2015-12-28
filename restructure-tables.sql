@@ -5,11 +5,15 @@ begin transaction;
 drop table if exists node_geometry;
 create table node_geometry (
        node_id bigint,
-       point   geometry(point)
+       point   geometry(point, 3857)
 );
 
+/* we could read this out of the planet_osm_point table, but i'd
+ * prefer calculating under my own control - 
+ * spherical pseudomercator (900913) is flawed, but used by osm2pgsql and scigrid  */
+
 insert into node_geometry (node_id, point)
-       select id, st_setsrid(st_makepoint(lon, lat), 4326)
+       select id, st_setsrid(st_makepoint(lon/100, lat/100), 3857)
               from planet_osm_nodes;
 
 /* intermediary, stupid table, but it makes further computations
@@ -26,10 +30,11 @@ insert into way_nodes (way_id, node_id, order_nr)
        select id, unnest(nodes), generate_subscripts(nodes, 1)
               from planet_osm_ways;
 
+
 drop table if exists way_geometry;
 create table way_geometry (
        way_id bigint,
-       line   geometry(linestring)
+       line   geometry(linestring, 3857)
 );
 
 insert into way_geometry
@@ -39,6 +44,7 @@ insert into way_geometry
               join way_nodes ng on ng.way_id = w.id
               join node_geometry n on ng.node_id = n.node_id
               group by id;
+
 
 drop table if exists relation_member;
 create table relation_member (
@@ -71,7 +77,6 @@ insert into power_type_names (power_name, power_type)
        values ('station', 's'),
               ('substation', 's'),
               ('sub_station', 's'),
-              ('generator', 's'),
               ('plant', 's'),
               ('cable', 'l'),
               ('line', 'l'),
@@ -129,7 +134,7 @@ create table power_line (
        osm_id varchar(64),
        power_name varchar(64) not null,
        tags hstore,
-       extent geometry(linestring),
+       extent geometry(linestring, 3857),
        primary key (osm_id)
 );
 
