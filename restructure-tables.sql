@@ -1,52 +1,31 @@
 /* assume we use the osm2pgsql 'accidental' tables */
 begin transaction;
 
-/* compute geometries of nodes, ways */
 drop table if exists node_geometry;
+drop table if exists way_geometry;
+drop table if exists relation_member;
+drop table if exists power_type_names;
+drop table if exists electrical_properties;
+drop table if exists power_station;
+drop table if exists power_line;
+
 create table node_geometry (
        node_id bigint,
        point   geometry(point, 3857)
 );
 
-/* we could read this out of the planet_osm_point table, but i'd
- * prefer calculating under my own control - 
- * spherical pseudomercator (900913) is flawed, but used by osm2pgsql and scigrid  */
-
-insert into node_geometry (node_id, point)
-       select id, st_setsrid(st_makepoint(lon/100, lat/100), 3857)
-              from planet_osm_nodes;
-
-/* intermediary, stupid table, but it makes further computations
-   so much simpler */
-drop table if exists way_nodes;
-create table way_nodes (
-       way_id bigint,
-       node_id bigint,
-       order_nr int
-);
-
-/* postgresql! yay! */
-insert into way_nodes (way_id, node_id, order_nr)
-       select id, unnest(nodes), generate_subscripts(nodes, 1)
-              from planet_osm_ways;
-
-
-drop table if exists way_geometry;
 create table way_geometry (
        way_id bigint,
        line   geometry(linestring, 3857)
 );
 
-insert into way_geometry
-       select id, st_makeline(array_agg(n.point order by ng.order_nr))
-              from planet_osm_ways w
-              /* nb - does the following line keep the node order? */
-              join way_nodes ng on ng.way_id = w.id
-              join node_geometry n on ng.node_id = n.node_id
-              group by id;
+/* lookup table for power types */
+create table power_type_names (
+       power_name varchar(64) primary key,
+       power_type char(1) not null,
+       check (power_type in ('s','l','r'))
+);
 
-
-drop table if exists relation_member;
 create table relation_member (
        relation_id bigint,
        member_id   varchar(64) not null,
@@ -54,25 +33,37 @@ create table relation_member (
        foreign key (relation_id) references planet_osm_rels (id)
 );
 
-/* TODO: figure out how to compute relation geometry, given that it
-   may be recursive! */
-insert into relation_member (relation_id, member_id, member_role)
-       select s.pid, s.mid, s.mrole from (
-              select id as pid, unnest(akeys(hstore(members))) as mid,
-                                unnest(avals(hstore(members))) as mrole
-                    from planet_osm_rels
-       ) s;
-
-
-/* lookup table for power types */
-drop table if exists power_type_names;
-
-create table power_type_names (
-       power_name varchar(64) primary key,
-       power_type char(1) not null,
-       check (power_type in ('s','l','r'))
+create table electrical_properties (
+       osm_id varchar(20),
+       part_nr int default 0,
+       frequency float null,
+       voltage int null,
+       conductor_bundles int null,
+       subconductors int null
 );
 
+create table power_station (
+       osm_id varchar(64) not null,
+       power_name varchar(64) not null,
+       tags hstore,
+       location geometry(point, 3857),
+       area geometry(polygon, 3857),
+       objects text[],
+       primary key (osm_id)
+);
+
+create table power_line (
+       osm_id varchar(64),
+       power_name varchar(64) not null,
+       tags hstore,
+       extent geometry(linestring, 3857),
+       terminals geometry(multipolygon, 3857),
+       objects text[],
+       primary key (osm_id)
+);
+
+
+/* all things recognised as certain stations */
 insert into power_type_names (power_name, power_type)
        values ('station', 's'),
               ('substation', 's'),
@@ -84,76 +75,79 @@ insert into power_type_names (power_name, power_type)
               ('minor_line', 'l');
 
 
-drop table if exists electrical_properties;
+/* we could read this out of the planet_osm_point table, but i'd
+ * prefer calculating under my own control -
+ * spherical pseudomercator (900913) is flawed, but used by osm2pgsql and scigrid  */
 
-create table electrical_properties (
-       osm_id varchar(20),
-       part_nr int default 0,
-       frequency float null,
-       voltage int null,
-       conductor_bundles int null,
-       subconductors int null
-);
+insert into node_geometry (node_id, point)
+       select id, st_setsrid(st_makepoint(lon/100.0, lat/100.0), 3857)
+              from planet_osm_nodes;
 
-drop table if exists power_station;
+insert into way_geometry (way_id, line)
+       select way_id, ST_MakeLine(n.point order by order_nr)
+              from (
+                   select id as way_id, unnest(nodes) as node_id, generate_subscripts(nodes, 1) as order_nr
+                          from planet_osm_ways
+              ) as wn
+              join node_geometry n on n.node_id = wn.node_id
+              group by way_id;
 
-create table power_station (
-       osm_id varchar(64) not null,
-       power_name varchar(64) not null,
-       tags hstore,
-       location geometry,
-       primary key (osm_id)
-);
-
-
-insert into power_station (
-       osm_id, power_name, tags, location
-) select concat('n', id), hstore(tags)->'power', hstore(tags), g.point
-           from planet_osm_nodes n
-           join node_geometry g on g.node_id = n.id
-           where hstore(tags)->'power' in (
-               select power_name from power_type_names
-                      where power_type = 's'
-         );
-
-insert into power_station (
-       osm_id, power_name, tags, location
-) select concat('w', id), hstore(tags)->'power', hstore(tags),
-         case when St_IsClosed(g.line)
-              then St_MakePolygon(g.line)
-              else g.line end
-         from planet_osm_ways w
-         join way_geometry g on g.way_id = w.id
-         where hstore(tags)->'power' in (
-               select power_name from power_type_names
-                      where power_type = 's'
-         );
-
-drop table if exists power_line;
-create table power_line (
-       osm_id varchar(64),
-       power_name varchar(64) not null,
-       tags hstore,
-       extent geometry(linestring, 3857),
-       primary key (osm_id)
-);
+/* TODO: figure out how to compute relation geometry, given that it
+   may be recursive! */
+insert into relation_member (relation_id, member_id, member_role)
+       select s.pid, s.mid, s.mrole from (
+              select id as pid, unnest(akeys(hstore(members))) as mid,
+                                unnest(avals(hstore(members))) as mrole
+                    from planet_osm_rels
+       ) s;
 
 
+/* stations as ways */
+with way_stations as (
+        select concat('w', id) as osm_id, hstore(tags) as tags,
+                case when st_isclosed(line) then st_makepolygon(line)
+                     when st_npoints(line) = 2 then st_buffer(line, 1)
+                     else st_makepolygon(st_addpoint(line, st_startpoint(line))) end as geom
+                from planet_osm_ways w
+                join way_geometry g on g.way_id = w.id
+                where hstore(tags)->'power' in (
+                        select power_name from power_type_names
+                                where power_type = 's'
+                )
+)
+insert into power_station (osm_id, power_name, tags, location, area, objects)
+        select osm_id, tags->'power', tags, st_centroid(geom), st_convexhull(st_buffer(geom, 100)), array[osm_id]
+                from way_stations;
+/* stations in the shape of nodes */
+with node_stations as (
+        select concat('n', id) as osm_id, hstore(tags) as tags, point
+                from planet_osm_nodes n
+                join node_geometry g on g.node_id = n.id
+                where hstore(tags)->'power' in (
+                        select power_name from power_type_names where power_type = 's'
+                )
+)
+insert into power_station (osm_id, power_name, tags, location, area, objects)
+       select osm_id, tags->'power', tags,  point, st_buffer(point, 250), array[osm_id]
+              from node_stations;
 
+with way_lines as (
+     select concat('w', id) as osm_id, hstore(tags) as tags, line
+            from planet_osm_ways w
+            join way_geometry g on g.way_id = w.id
+            where hstore(tags)->'power' in (
+                  select power_name from power_type_names where power_type = 'l'
+            )
+)
 insert into power_line (
-       osm_id, power_name, tags, extent
-) select concat('w', id), hstore(tags)->'power', hstore(tags), g.line
-         from planet_osm_ways w
-         join way_geometry g on g.way_id = w.id
-         where hstore(tags)->'power' in (
-               select power_name from power_type_names where power_type = 'l'
-         );
+       osm_id, power_name, tags, extent, terminals, objects
+) select osm_id, tags->'power', tags, line,
+         ST_Collect(ST_Buffer(ST_StartPoint(line), 100), ST_Buffer(ST_EndPoint(line), 100)), array[osm_id]
+         from way_lines;
 
-/* not necessary if we're going to use buffered versions of the
-   geometries; nb that for buffering it might be quite a good idea to
-   translate to a meter-based geometry system anyway, or to a
-   geography system. */
-
+create index power_station_area   on power_station using gist(area);
+create index power_line_extent    on power_line    using gist(extent);
+create index power_line_terminals on power_line  using gist(terminals);
 commit;
 
 vacuum analyze power_line;
