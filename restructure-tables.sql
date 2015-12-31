@@ -56,9 +56,9 @@ create table power_line (
        osm_id varchar(64),
        power_name varchar(64) not null,
        tags hstore,
-       extent geometry(linestring, 3857),
-       terminals geometry(multipolygon, 3857),
-       objects text[],
+       extent    geometry(linestring, 3857),
+       terminals geometry(geometry, 3857),
+       objects   text[],
        primary key (osm_id)
 );
 
@@ -142,7 +142,7 @@ with way_lines as (
 insert into power_line (
        osm_id, power_name, tags, extent, terminals, objects
 ) select osm_id, tags->'power', tags, line,
-         ST_Collect(ST_Buffer(ST_StartPoint(line), 100), ST_Buffer(ST_EndPoint(line), 100)), array[osm_id]
+         ST_Buffer(ST_Union(ST_StartPoint(line), ST_EndPoint(line)), 100), array[osm_id]
          from way_lines;
 
 create index power_station_area   on power_station using gist(area);

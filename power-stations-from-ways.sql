@@ -1,4 +1,4 @@
-﻿
+
 with way_stations as (
 	select concat('w', id) as osm_id, hstore(tags) as tags, 
 		case when st_isclosed(line) then st_makepolygon(line)

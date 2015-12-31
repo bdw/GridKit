@@ -1,4 +1,4 @@
-﻿with node_stations as (
+with node_stations as (
 	select concat('n', id) as osm_id, hstore(tags) as tags, point
 		from planet_osm_nodes n
 		join node_geometry g on g.node_id = n.id
