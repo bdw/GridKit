@@ -4,3 +4,4 @@
 *.png
 *.dot
 jit-log.txt
+*.pyc
