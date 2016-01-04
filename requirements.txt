@@ -1,9 +1,12 @@
+PYPOWER==5.0.1
+argparse==1.2.1
 cycler==0.9.0
 matplotlib==1.5.0
 numpy==1.10.2
 pyparsing==2.0.6
-PYPOWER==5.0.1
 python-dateutil==2.4.2
 pytz==2015.7
+recordclass==0.4
 scipy==0.16.1
 six==1.10.0
+wsgiref==0.1.2
