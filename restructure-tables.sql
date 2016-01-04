@@ -116,8 +116,9 @@ with way_stations as (
                 )
 )
 insert into power_station (osm_id, power_name, tags, location, area, objects)
-        select osm_id, tags->'power', tags, st_centroid(geom), st_convexhull(st_buffer(geom, 100)), array[osm_id]
+        select osm_id, tags->'power', tags, st_centroid(geom), st_convexhull(st_buffer(geom, 150)), array[osm_id]
                 from way_stations;
+
 /* stations in the shape of nodes */
 with node_stations as (
         select concat('n', id) as osm_id, hstore(tags) as tags, point
@@ -128,7 +129,7 @@ with node_stations as (
                 )
 )
 insert into power_station (osm_id, power_name, tags, location, area, objects)
-       select osm_id, tags->'power', tags,  point, st_buffer(point, 250), array[osm_id]
+       select osm_id, tags->'power', tags,  point, st_buffer(point, 100), array[osm_id]
               from node_stations;
 
 with way_lines as (
@@ -147,7 +148,9 @@ insert into power_line (
 
 create index power_station_area   on power_station using gist(area);
 create index power_line_extent    on power_line    using gist(extent);
-create index power_line_terminals on power_line  using gist(terminals);
+create index power_line_terminals on power_line    using gist(terminals);
+
+create sequence synthetic_objects start 1;
 commit;
 
 vacuum analyze power_line;
