@@ -1,5 +1,5 @@
 /* select all stations that share space and collect them together, probably requires a recursive query of sorts */
-
+begin;
 drop table if exists merged_stations;
 create table merged_stations (
        osm_id  text,
@@ -31,4 +31,4 @@ insert into power_station (osm_id, power_name, objects, location, area)
               from merged_stations;
 delete from power_station where osm_id in (select unnest(objects) from merged_stations);
 
-       
+commit;

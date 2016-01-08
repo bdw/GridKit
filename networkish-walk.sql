@@ -1,4 +1,4 @@
-﻿drop table if exists networkish;
+drop table if exists networkish;
 create table networkish (
 	src integer,
 	dst integer
