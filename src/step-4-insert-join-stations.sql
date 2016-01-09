@@ -1,4 +1,4 @@
-﻿/* a ends on line b */
+/* a ends on line b */
 begin;
 /* Get attachment points, split lines, insert stations for attachment points */
 drop table if exists attached_lines;
