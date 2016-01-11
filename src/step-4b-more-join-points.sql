@@ -16,7 +16,8 @@ insert into line_terminals (osm_id, area)
 create index line_terminals_area on line_terminals using gist (area);
 
 insert into line_intersections (src, dst, area)
-       select a.osm_id, b.osm_id, ST_Buffer((ST_Dump(ST_Intersection(a.area, b.area))).geom, 1)
+       select distinct least(a.osm_id, b.osm_id), greatest(a.osm_id, b.osm_id),
+                       ST_Buffer((ST_Dump(ST_Intersection(a.area, b.area))).geom, 1)
               from line_terminals a join line_terminals b on st_intersects(a.area, b.area)
                    and a.osm_id != b.osm_id
               where not exists (
