@@ -1,4 +1,4 @@
-PYPOWER==5.0.1
+PYPOWER==git+https://github.com/rwl/pypower.git
 argparse==1.2.1
 cycler==0.9.0
 matplotlib==1.5.0
