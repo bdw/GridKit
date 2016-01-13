@@ -1,19 +1,28 @@
-drop table if exists foobar;
+﻿drop table if exists foobar;
+drop function if exists addset(v int[], a int);
+/* our vertices table */
 create table foobar (
-       foo int[]
+       src int,
+       dst int
 );
 
-insert into foobar (foo) values (array[1,2,3]), (array[3,4,5]), (array[5,11]), (array[6,7,8]), (array[8,9,10]);
-with recursive foo_start(foo, bar) as (
-       select foo, (select min(e) from (select unnest(foo) as e) as m) as bar from foobar
-), combinations as (
-       select * from foo_start
-       union
-       select array_agg(distinct e order by e) as foo, bar from (
-              select unnest(a.foo || b.foo) as e, least(a.bar, b.bar) as bar
-                     from combinations a
-                     join foo_start b on b.foo && a.foo
-       ) z group by bar
-) select * from combinations a where not exists (
-       select * from combinations b where b.foo @> a.foo and b.foo != a.foo
+/* Create a small function to treat an array like a set */
+create function addset(v int[], a int) returns int[]
+as $$
+begin
+	return (select array_agg(e order by e) from (select unnest(v || a) as e) f);
+end
+$$ language plpgsql;
+/* fill our table with vertices, note the ordering of each value */
+insert into foobar (src, dst) values (1,2), (1,3), (2,3), (3,4), (4,5), (6,7), (6,8);
+/* use a recursive query to extend the sets */
+with recursive foo_union (v) as (
+	select array[src, dst] as v from foobar
+	union all
+	/* join self to original array; i can use a CTE as a 'starter', but that is not necessary here */
+	select addset(v, dst) from foo_union u, foobar f
+		where src = any(v) and not dst = any(v)
+) select distinct v from foo_union a where not exists (
+	/* eliminate the many overlapping results */
+	select * from foo_union b where b.v @> a.v and b.v != a.v
 );

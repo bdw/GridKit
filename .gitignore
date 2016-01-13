@@ -3,5 +3,6 @@
 .#*
 *.png
 *.dot
+*.pdf
 jit-log.txt
 *.pyc

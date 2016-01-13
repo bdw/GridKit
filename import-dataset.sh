@@ -11,5 +11,5 @@ osm2pgsql -d $DATABASE_NAME -c -k -s \
 	 $SCIGRID_HOME/data/02_osm_raw_power_data/de_power_151109.osm.pbf \
 	 || exit 1
 
-time psql -d $DATABASE_NAME -f ./preprare-tables.sql
+time psql -d $DATABASE_NAME -f ./prepare-tables.sql
 

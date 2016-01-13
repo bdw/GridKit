@@ -144,17 +144,73 @@ class Network(object):
             self._areas[area_name] = len(self._areas) + 1
         return self._areas[area_name]
 
-    def powercase(self, electrified_pair=None):
-        # generate powercase with two random electrified nodes
-        if electrified_pair is None:
-            electrified_pair = random.sample(self.stations, 2)
+    def powercase(self, loads=None):
+        # loads is a map of station id -> load, either positive or
+        # negative; a negative load is represented by a generator.
 
+        # if no loads map is passed,
+        # generate an 'electrified pair' of two random
+        # nodes, one of which delivers power, the other consumes it
+        if loads is None:
+            loads = self._electrified_pair()
         ppc = {
             "version": 2,
-            "baseMVA":, 100.0
+            "baseMVA": 100.0
         }
-        baseKV = 230
+        nodes        = list()
+        transformers = list()
+        generators   = list()
+        edges        = list()
 
+        station_to_bus = dict()
+        next_bus_id    = 1
+        for station in self.station.itervalues():
+            # because we do a DC PF, we ignore frequencies completely
+            pass
+
+    def _electrified_pair(self):
+        src, dst = random.sample(self.stations, 2)
+        return {
+            src: 100, # MW
+            dst: 50,  # MW
+        }
+
+    def _make_bus(self, station, voltage, load, bus_id):
+        # see pypower.caseformat for documentation on how this works
+        area_nr = self._area_number(station.operator)
+        base_kv  = station.voltage // 1000
+        return [
+            bus_id,
+            3,       # slack bus
+            load,    # real load in MW
+            0,       # reactive load MVAr, zero because DC
+            0,       # shunt conductance
+            0,       # shunt susceptance
+            area_nr, # area number
+            1.0,     # voltage magnitude per unit
+            0,       # voltage angle
+            base_kv, # base voltage (per unit base)
+            area_nr, # loss zone nr
+            1.1,     # max voltage per unit
+            0.9,     # min voltage per unit
+        ]
+
+    def _make_transformer(self, from_bus, to_bus, from_voltage, to_voltage):
+        return [
+            from_bus,
+            to_bus,
+        ]
+
+    def dot(self):
+        buf = io.StringIO()
+        buf.write("graph {\n")
+        buf.write("rankdir LR\n")
+        for station in self.stations.itervalues():
+            buf.write('s_{0} [label="{1}"]\n'.format(station.station_id, station.name.replace('"', "'")))
+        for line in self.lines.itervalues():
+            buf.write('s_{0} -- s_{1}\n'.format(line.left.station_id, line.right.station_id))
+        buf.write("}\n")
+        return buf.getvalue()
 
     def __repr__(self):
         return "Network of {0} stations, {1} lines".format(len(self.stations), len(self.lines)).encode('utf-8')
