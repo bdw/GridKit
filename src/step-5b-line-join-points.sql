@@ -1,9 +1,27 @@
-drop index if exists terminal_intersection_join;
-create index terminal_intersection_join on terminal_intersections (src, dst);
+begin;
+drop table if exists terminal_union_sets;
+create table terminal_union_sets (
+       k int,
+       v int
+);
+create index tusets_k on terminal_union_sets (k);
+create index tusets_v on terminal_union_sets (v);
+insert into terminal_union_sets (k, v)
+       select id, id from line_terminals;
+do $$
+declare
+        r record;
+        ksrc int;
+        kdst int;
+begin
+        for r in select src, dst from terminal_intersections loop
+            ksrc := (select k from terminal_union_sets where v = r.src);
+            kdst := (select k from terminal_union_sets where v = r.dst);
+            if ksrc != kdst then
+                update terminal_union_sets set k = ksrc where k = kdst;
+            end if;
+        end loop;
+end
+$$ language plpgsql;
 
-with recursive terminal_intersection_union (v) as (
-	select array[src,dst] as v from terminal_intersections
-	union all
-	select u.v || i.dst from terminal_intersections i, terminal_intersection_union u
-		where i.src = any(u.v) and not i.dst = any(u.v)
-) select v from terminal_intersection_union where array_length(v,1) > 2 limit 5000;
+commit;

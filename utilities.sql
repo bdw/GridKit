@@ -1,6 +1,5 @@
-﻿drop function if exists setmerge(a int[], b int[]);
-drop function if exists setadd(int[], int);
-create function setmerge(a int[], b int[]) returns int[]
+﻿drop function if exists setmerge(a anyarray, b anyelement);
+create function setmerge(a anyarray, b anyelement) returns anyarray
 as
 $$
 begin
@@ -10,18 +9,5 @@ begin
 end
 $$
 language plpgsql;
-create function setadd(s int[], v int) returns int[]
-as
-$$
-begin
-        return (select array_agg(distinct e order by e) from (
-               select unnest(s || v) as e
-        ) f);
-end
-$$
-language plpgsql;
 
-
-
-
-select setmerge(array[1,2,3],array[3,4]);
+select setmerge(array[1,2,3],array[3,4]), setmerge(array[1,2,3], 5);

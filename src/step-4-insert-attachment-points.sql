@@ -21,7 +21,7 @@ with line_splits as (
                 from attached_lines a join power_line l on l.osm_id = a.source_id
 )
 insert into power_line (osm_id, power_name, tags, objects, extent, terminals)
-        select concat('a', nextval('synthetic_objects')) as osm_id,
+        select concat('z', nextval('synthetic_objects')) as osm_id,
                 power_name, tags, objects, segment as extent,
                 ST_Buffer(ST_Union(ST_StartPoint(segment), ST_EndPoint(segment)), 100) as terminals
                 from line_splits;
@@ -32,7 +32,7 @@ with join_points as (
                 from attached_lines
 )
 insert into power_station (osm_id, power_name, objects, location, area)
-        select concat('j', nextval('synthetic_objects')) as osm_id, 'join', objects, st_centroid(area) as location, area
+        select concat('a', nextval('synthetic_objects')) as osm_id, 'attachment', objects, st_centroid(area) as location, area
                 from join_points;
 delete from power_line where osm_id in (select source_id from attached_lines);
 
