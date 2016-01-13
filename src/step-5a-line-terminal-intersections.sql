@@ -24,5 +24,6 @@ insert into terminal_intersections (src, dst, area)
               where not exists (
                     select * from power_station s where st_intersects(a.area, s.area)
               );
-create index terminal_intersection_area on terminal_intersections using gist (area);
+create index terminal_intersection_src on terminal_intersections (src);
+create index terminal_intersection_dst on terminal_intersections (dst);
 commit;
