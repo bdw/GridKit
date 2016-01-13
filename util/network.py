@@ -2,6 +2,7 @@ from __future__ import unicode_literals, division, print_function
 import io
 import csv
 import random
+import itertools
 from recordclass import recordclass
 from numpy import array
 
@@ -148,9 +149,9 @@ class Network(object):
         # loads is a map of station id -> load, either positive or
         # negative; a negative load is represented by a generator.
 
-        # if no loads map is passed,
-        # generate an 'electrified pair' of two random
-        # nodes, one of which delivers power, the other consumes it
+        # if no loads map is passed, generate an 'electrified pair' of
+        # two random nodes, one of which delivers power, the other
+        # consumes it
         if loads is None:
             loads = self._electrified_pair()
         ppc = {
@@ -158,27 +159,57 @@ class Network(object):
             "baseMVA": 100.0
         }
         nodes        = list()
-        transformers = list()
-        generators   = list()
         edges        = list()
+        generators   = list()
 
         station_to_bus = dict()
-        next_bus_id    = 1
-        for station in self.station.itervalues():
+        bus_id_gen     = itertools.count()
+
+        for station in self.stations.itervalues():
             # because we do a DC PF, we ignore frequencies completely
-            pass
+            minv, maxv = min(station.voltages), max(station.voltages)
+            for voltage in station.voltages:
+                if station.station_id in loads and voltage == minv:
+                    bus_load = loads[station.station_id]
+                else:
+                    bus_load = 0
+                bus_id = next(bus_id_gen)
+                station_to_bus[station.station_id, voltage] = bus_id
+                if bus_load < 0:
+                    # it is a generator instead of a load, insert it
+                    generators.append(self._make_generator(bus_id, -bus_load))
+                    bus_load = 0
+                nodes.append(self._make_bus(station, voltage, bus_load, bus_id))
+
+            for voltage in station.voltages:
+                if voltage != maxv:
+                    # create a transformer branch from max voltage to this voltage
+                    from_bus = station_to_bus[station.station_id, maxv]
+                    to_bus   = station_to_bus[station.station_id, voltage]
+                    edges.append(self._make_transformer(from_bus, to_bus))
+
+        for line in self.lines.itervalues():
+            # create branches between stations
+            from_bus = station_to_bus[line.left.station_id, line.voltage]
+            to_bus   = station_to_bus[line.right.station_id, line.voltage]
+            edges.append(self._make_line(line, from_bus, to_bus))
+
+        ppc['bus']    = array(nodes)
+        ppc['gen']    = array(generators)
+        ppc['branch'] = array(edges)
+        return ppc
 
     def _electrified_pair(self):
         src, dst = random.sample(self.stations, 2)
         return {
-            src: 100, # MW
+            src: -100, # MW
             dst: 50,  # MW
         }
 
     def _make_bus(self, station, voltage, load, bus_id):
         # see pypower.caseformat for documentation on how this works
-        area_nr = self._area_number(station.operator)
-        base_kv  = station.voltage // 1000
+        area_nr  = self._area_number(station.operator)
+        base_kv  = voltage // 1000
         return [
             bus_id,
             3,       # slack bus
@@ -195,11 +226,66 @@ class Network(object):
             0.9,     # min voltage per unit
         ]
 
-    def _make_transformer(self, from_bus, to_bus, from_voltage, to_voltage):
+    def _make_transformer(self, from_bus, to_bus):
         return [
             from_bus,
             to_bus,
+            0.01,      # resistance
+            0.01,      # reactance
+            0.01,      # line charging susceptance
+            200,       # long term rating (MW)
+            200,       # short term rating (MW)
+            200,       # emergency rating (MW)
+            1,         # off-nominal (correction) taps ratio, 1 for no correction
+            0,         # transformer phase shift angle,
+            1,         # status (1 = on)
+            -360,      # minimum angle
+            360,       # maximum angle
         ]
+
+    def _make_line(self, line, from_bus, to_bus):
+        return [
+            from_bus,
+            to_bus,
+            line.resistance or 0.01,   # default value if None
+            line.reactance or 0.01,
+            line.susceptance or 0.01,
+            200,
+            200,
+            200,
+            0,                          # not a transformer
+            0,                          # not a transformer
+            1,                          # status
+            -360,
+            360
+        ]
+
+    def _make_generator(self, bus_id, power_output):
+        return [
+            bus_id,
+            power_output,
+            0,             # reactive power output
+            0,             # maximum reactive power output
+            0,             # minimum reactive power output
+            1.0,           # per-unit voltage magnitude setpoint
+            100,           # base MVA
+            1,             # status (on)
+            power_output,  # maximum real power output
+            0,             # minimum real power output
+            0,             # Pc1, irrelevant
+            0,             # Pc2
+            0,             # Qc1min
+            0,             # Qc1max
+            0,             # Qc2min
+            0,             # Qc2max
+            5,             # ramp rate load-following (MW/min)
+            5,             # ramp rate 10-min reserve (MW/min)
+            5,             # ramp rate 30-min reserve (MW/min)
+            0,             # ramp rate reactive power
+            0,             # area participation factor
+        ]
+        pass
+
 
     def dot(self):
         buf = io.StringIO()
