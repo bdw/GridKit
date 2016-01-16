@@ -10,15 +10,15 @@ insert into terminal_union_sets (k, v)
        select id, id from line_terminals;
 do $$
 declare
-        r record;
-        ksrc int;
-        kdst int;
+        i terminal_intersections;
+        s int;
+        d int;
 begin
-        for r in select src, dst from terminal_intersections loop
-            ksrc := (select k from terminal_union_sets where v = r.src);
-            kdst := (select k from terminal_union_sets where v = r.dst);
-            if ksrc != kdst then
-                update terminal_union_sets set k = ksrc where k = kdst;
+        for i in select src, dst from terminal_intersections loop
+            s := (select k from terminal_union_sets where v = i.src);
+            d := (select k from terminal_union_sets where v = i.dst);
+            if s != d then
+                update terminal_union_sets set k = s where k = d;
             end if;
         end loop;
 end
