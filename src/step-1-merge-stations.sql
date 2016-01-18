@@ -1,7 +1,10 @@
 /* select all stations that share space and collect them together, probably requires a recursive query of sorts */
 begin;
 drop table if exists merged_stations;
+
+
 create table merged_stations (
+       synth_id varchar(64),
        osm_id  text,
        objects text[],
        area    geometry(geometry, 3857)
@@ -20,14 +23,14 @@ with recursive overlapping_stations(osm_id, objects) as (
            select least(a.osm_id, b.osm_id) as osm_id, unnest(a.objects || b.objects) as e
                   from combinations as a join overlapping_stations b on b.objects && a.objects
        ) sq group by sq.osm_id
-) insert into merged_stations (osm_id, objects, area)
-         select osm_id, objects, (select ST_Union(b.area) from power_station b where b.osm_id in (select unnest(a.objects))) as area
+) insert into merged_stations (synth_id, osm_id, objects, area)
+         select concat('m', nextval('synthetic_objects')),  osm_id, objects, (select ST_Union(b.area) from power_station b where b.osm_id in (select unnest(a.objects))) as area
                 from combinations a where not exists (
                 select * from combinations b where b.objects @> a.objects and a.objects != b.objects
          );
 
 insert into power_station (osm_id, power_name, objects, location, area)
-       select concat('m', nextval('synthetic_objects')), 'merged', objects, ST_Centroid(area), area
+       select synth_id, 'merged', objects, ST_Centroid(area), area
               from merged_stations;
 delete from power_station where osm_id in (select unnest(objects) from merged_stations);
 

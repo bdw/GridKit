@@ -21,14 +21,15 @@ with line_splits as (
                 from attached_lines a join power_line l on l.osm_id = a.source_id
 )
 insert into power_line (osm_id, power_name, tags, objects, extent, terminals)
-        select concat('z', nextval('synthetic_objects')) as osm_id,
-                power_name, tags, objects, segment as extent,
-                ST_Buffer(ST_Union(ST_StartPoint(segment), ST_EndPoint(segment)), 100) as terminals
-                from line_splits;
+    -- todo, create synthetic ids prior to inserting power lines for better accountability
+    select concat('z', nextval('synthetic_objects')) as osm_id,
+           power_name, tags, objects, segment as extent,
+           buffered_terminals(segment) as terminals
+           from line_splits;
 
 
 with join_points as (
-        select ST_MinimumBoundingCircle((ST_Dump(attachments)).geom) as area, attach_id || source_id as objects
+        select (ST_Dump(attachments)).geom as area, attach_id || source_id as objects
                 from attached_lines
 )
 insert into power_station (osm_id, power_name, objects, location, area)

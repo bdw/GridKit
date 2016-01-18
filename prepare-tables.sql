@@ -9,6 +9,9 @@ drop table if exists electrical_properties;
 drop table if exists power_station;
 drop table if exists power_line;
 drop sequence if exists synthetic_objects;
+drop function if exists buffered_terminals(geometry(linestring));
+drop function if exists buffered_station_point(geometry(point));
+drop function if exists buffered_station_area(geometry(polygon));
 
 create table node_geometry (
        node_id bigint,
@@ -64,6 +67,24 @@ create table power_line (
 );
 
 
+create function buffered_terminals(line geometry(linestring)) returns geometry(linestring) as $$
+begin
+    return (select st_buffer(st_union(st_startpoint(line), st_endpoint(line)), 100));
+end
+$$ language plpgsql;
+
+create function buffered_station_point(point geometry(point)) returns geometry(polygon) as $$
+begin
+    return (select st_buffer(point, 50));
+end;
+$$ language plpgsql;
+
+create function buffered_station_area(area geometry(polygon)) returns geometry(polygon) as $$
+begin
+    return (select st_convexhull(st_buffer(area, least(sqrt(st_area(area)), 100))));
+end
+$$ language plpgsql;
+
 /* all things recognised as certain stations */
 insert into power_type_names (power_name, power_type)
        values ('station', 's'),
@@ -118,8 +139,7 @@ with way_stations as (
 )
 insert into power_station (osm_id, power_name, tags, location, area, objects)
         select osm_id, tags->'power', tags, st_centroid(geom),
-               st_convexhull(st_buffer(geom, sqrt(st_area(geom)))),
-               array[osm_id]
+               buffered_station_area(geom), array[osm_id]
                from way_stations;
 
 /* stations in the shape of nodes */
@@ -132,7 +152,7 @@ with node_stations as (
                 )
 )
 insert into power_station (osm_id, power_name, tags, location, area, objects)
-       select osm_id, tags->'power', tags,  point, st_buffer(point, 50), array[osm_id]
+       select osm_id, tags->'power', tags,  point, buffered_station_point(point), array[osm_id]
               from node_stations;
 
 with way_lines as (
@@ -145,9 +165,8 @@ with way_lines as (
 )
 insert into power_line (
        osm_id, power_name, tags, extent, terminals, objects
-) select osm_id, tags->'power', tags, line,
-         ST_Buffer(ST_Union(ST_StartPoint(line), ST_EndPoint(line)), 100), array[osm_id]
-         from way_lines;
+) select osm_id, tags->'power', tags, line, buffered_terminals(line), array[osm_id]
+    from way_lines;
 
 create index power_station_area   on power_station using gist(area);
 create index power_line_extent    on power_line    using gist(extent);
