@@ -9,9 +9,13 @@ drop table if exists electrical_properties;
 drop table if exists power_station;
 drop table if exists power_line;
 drop sequence if exists synthetic_objects;
+/* functions */
 drop function if exists buffered_terminals(geometry(linestring));
 drop function if exists buffered_station_point(geometry(point));
 drop function if exists buffered_station_area(geometry(polygon));
+drop function if exists source_line_objects(text[]);
+drop function if exists source_station_objects(text[]);
+drop function if exists connect_lines(a geometry(linestring), b geometry(linestring));
 
 create table node_geometry (
        node_id bigint,
@@ -84,6 +88,36 @@ begin
     return (select st_convexhull(st_buffer(area, least(sqrt(st_area(area)), 100))));
 end
 $$ language plpgsql;
+
+
+create function source_line_objects (ref text[]) returns text[] as $$
+begin
+    return array_agg(distinct e) from (select unnest(objects) as e from power_line where osm_id = any(ref)) f;
+end
+$$ language plpgsql;
+
+create function source_station_objects (ref text[]) returns text[] as $$
+begin
+    return array_agg(distinct e) from (select unnest(objects) as e from power_station where osm_id = any(ref)) f;
+end
+$$ language plpgsql;
+
+
+create function connect_lines (a geometry(linestring), b geometry(linestring)) returns geometry(linestring) as $$
+begin
+    -- select the shortest line that comes from joining the lines
+     -- in all possible directions
+    return (select e from (
+               select unnest(
+                   array[st_makeline(a, b),
+                         st_makeline(a, st_reverse(b)),
+                         st_makeline(st_reverse(a), b),
+                         st_makeline(st_reverse(a), st_reverse(b))]) e) f
+                   order by st_length(e) limit 1);
+end
+$$ language plpgsql;
+
+
 
 /* all things recognised as certain stations */
 insert into power_type_names (power_name, power_type)

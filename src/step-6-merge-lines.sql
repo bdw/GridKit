@@ -27,21 +27,6 @@ create index line_sets_k on line_sets (k);
 create index line_sets_v on line_sets (v);
 -- union-find algorithm again.
 
-
-drop function if exists connect_lines(a geometry(linestring), b geometry(linestring));
-create function connect_lines (a geometry(linestring), b geometry(linestring)) returns geometry(linestring) as $$
-begin
-    -- select the shortest line that comes from joining the lines
-     -- in all possible directions
-    return (select e from (
-               select unnest(
-                   array[st_makeline(a, b),
-                         st_makeline(a, st_reverse(b)),
-                         st_makeline(st_reverse(a), b),
-                         st_makeline(st_reverse(a), st_reverse(b))]) e) f
-                   order by st_length(e) limit 1);
-end
-$$ language plpgsql;
 do $$
 declare
     s record;
