@@ -11,7 +11,7 @@ declare
     terminal_union geometry;
 begin
     for line in select osm_id, extent, terminals from power_line where osm_id in (
-        select synth_id from attachment_split_lines union all select unnest(attach_id) from line_attachments
+         select unnest(attach_id) from line_attachments
     )
     loop
 
