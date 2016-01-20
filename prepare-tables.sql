@@ -42,7 +42,7 @@ create table relation_member (
 );
 
 create table electrical_properties (
-       osm_id varchar(20),
+       osm_id varchar(64),
        part_nr int default 0,
        frequency float null,
        voltage int null,
@@ -51,7 +51,7 @@ create table electrical_properties (
 );
 
 create table power_station (
-       osm_id varchar(64) not null,
+       osm_id varchar(64),
        power_name varchar(64) not null,
        tags hstore,
        location geometry(point, 3857),

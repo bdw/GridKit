@@ -4,6 +4,7 @@ begin;
 drop table if exists line_attachments;
 drop table if exists attachment_stations;
 drop table if exists attachment_split_lines;
+
 create table line_attachments (
     source_id text,
     attach_id text[],
@@ -46,11 +47,13 @@ insert into power_line (osm_id, power_name, tags, objects, extent, terminals)
     -- todo, reduce objects to source objects
     select a.synth_id, l.power_name, l.tags, source_line_objects(array[a.source_id]),
            a.extent, buffered_terminals(a.extent) as terminals
-           from attachment_split_lines a join power_line l on l.osm_id = a.source_id;
+        from attachment_split_lines a join power_line l on l.osm_id = a.source_id;
 
 insert into power_station (osm_id, power_name, objects, location, area)
     select synth_id, 'attachment', source_line_objects(objects), st_centroid(area), area
         from attachment_stations;
+
+
 
 delete from power_line where osm_id in (select source_id from attached_lines);
 commit;
