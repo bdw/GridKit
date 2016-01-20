@@ -55,5 +55,8 @@ insert into power_station (osm_id, power_name, objects, location, area)
 
 
 
-delete from power_line where osm_id in (select source_id from attached_lines);
+delete from power_line where osm_id in (
+    select source_id from line_attachments
+);
+
 commit;

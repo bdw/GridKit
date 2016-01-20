@@ -15,14 +15,8 @@ begin
     )
     loop
 
-        -- todo, maybe just recalculate the buffers
-        if st_geometrytype(line.terminals) = 'ST_MultiPolygon' then
-            start_terminal = ST_GeometryN(line.terminals, 1);
-            end_terminal   = ST_GeometryN(line.terminals, 2);
-        else
-            start_terminal = line.terminals;
-            end_terminal   = line.terminals;
-        end if;
+        start_terminal = st_buffer(st_startpoint(line.extent), 100);
+        end_terminal   = st_buffer(st_endpoint(line.extent), 100);
 
         -- limit startpoint terminal if connected with an attachment point
         start_area = area from power_station
