@@ -16,6 +16,11 @@ drop function if exists buffered_station_area(geometry(polygon));
 drop function if exists source_line_objects(text[]);
 drop function if exists source_station_objects(text[]);
 drop function if exists connect_lines(a geometry(linestring), b geometry(linestring));
+-- minimal buffer arround a point given area with which it should intersect
+drop function if exists minimal_buffer(p geometry(point), a geometry(multipolygon));
+drop function if exists minimal_terminals(l geometry(linestring), a geometry(multipolygon));
+
+
 
 create table node_geometry (
        node_id bigint,
@@ -31,7 +36,7 @@ create table way_geometry (
 create table power_type_names (
        power_name varchar(64) primary key,
        power_type char(1) not null,
-       check (power_type in ('s','l','r'))
+       check (power_type in ('s','l','r', 'v'))
 );
 
 create table relation_member (
@@ -70,10 +75,10 @@ create table power_line (
        primary key (osm_id)
 );
 
-
+-- todo, split function preparation from this file
 create function buffered_terminals(line geometry(linestring)) returns geometry(linestring) as $$
 begin
-    return (select st_buffer(st_union(st_startpoint(line), st_endpoint(line)), 100));
+    return (select st_buffer(st_union(st_startpoint(line), st_endpoint(line)), 50));
 end
 $$ language plpgsql;
 
@@ -117,6 +122,22 @@ begin
 end
 $$ language plpgsql;
 
+create function minimal_buffer(p geometry(point), a geometry(multipolygon))
+       returns geometry(polygon) as $$
+begin
+    return case when st_distance(p, a) < 1 then st_buffer(p, 1) else st_buffer(p, 50) end;
+end
+$$ language plpgsql;
+
+create function minimal_terminals(l geometry(linestring), a geometry(multipolygon))
+       returns geometry(multipolygon) as $$
+begin
+    return st_multi(st_union(minimal_buffer(st_startpoint(l), a),
+                             minimal_buffer(st_endpoint(l), a)));
+end
+$$ language plpgsql;
+
+
 
 
 /* all things recognised as certain stations */
@@ -128,7 +149,11 @@ insert into power_type_names (power_name, power_type)
               ('cable', 'l'),
               ('line', 'l'),
               ('minor_cable', 'l'),
-              ('minor_line', 'l');
+              ('minor_line', 'l'),
+              -- virtual elements
+              ('attachment', 'v'),
+              ('merged', 'v'),
+              ('join', 'v');
 
 
 /* we could read this out of the planet_osm_point table, but i'd
