@@ -20,7 +20,6 @@ insert into line_intersections (line_id, station_id, extent, areas)
     select l.osm_id, array_agg(s.osm_id), l.extent, st_multi(st_union(s.area))
         from power_line l
         join power_station s on st_intersects(l.extent, s.area)
-           and not st_intersects(l.terminals, s.area)
        group by l.osm_id, l.extent;
 
 insert into split_lines (synth_id, source_id, segment)
