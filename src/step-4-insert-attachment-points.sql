@@ -4,6 +4,7 @@ begin;
 drop table if exists line_attachments;
 drop table if exists attachment_stations;
 drop table if exists attachment_split_lines;
+drop table if exists attached_lines;
 
 create table line_attachments (
     source_id   varchar(64),
@@ -25,6 +26,14 @@ create table attachment_split_lines (
     extent    geometry(linestring, 3857)
 );
 
+create table attached_lines (
+    line_id varchar(64),
+    station_id text[],
+    extent geometry(linestring, 3857),
+    areas  geometry(multipolygon, 3857),
+    primary key (line_id)
+);
+
 insert into line_attachments (source_id, attach_id, extent, attachments)
     select b.osm_id, array_agg(distinct a.osm_id), b.extent,
            st_multi(st_union(st_buffer(st_intersection(a.terminals, b.extent), 1)))
@@ -43,9 +52,27 @@ insert into attachment_stations (synth_id, objects, area)
            (st_dump(attachments)).geom
         from line_attachments;
 
+/* Compute which lines to extend to attach to the power lines */
+insert into attached_lines (line_id, extent, station_id, areas)
+    select l.osm_id, l.extent, array_agg(s.synth_id), st_multi(st_union(s.area))
+        from power_line l
+        join line_attachments a on l.osm_id = any(a.attach_id)
+        join attachment_stations s on a.source_id = any(s.objects)
+        group by l.osm_id;
+
+/* Two queries are easier than a single 4-way monster query */
+update attached_lines
+    set extent = connect_lines(st_shortestline(st_startpoint(extent), areas), extent)
+    where st_intersects(st_buffer(st_startpoint(extent), 50), areas)
+        and st_distance(st_startpoint(extent), areas) > 1;
+
+update attached_lines
+    set extent = connect_lines(extent, st_shortestline(st_endpoint(extent), areas))
+    where st_intersects(st_buffer(st_endpoint(extent), 50), areas)
+        and st_distance(st_endpoint(extent), areas) > 1;
+
 
 insert into power_line (osm_id, power_name, tags, objects, extent, terminals)
-    -- todo, reduce objects to source objects
     select s.synth_id, l.power_name, l.tags, source_line_objects(array[s.source_id]),
            s.extent, minimal_terminals(s.extent, a.attachments) as terminals
         from attachment_split_lines s
@@ -55,6 +82,11 @@ insert into power_line (osm_id, power_name, tags, objects, extent, terminals)
 insert into power_station (osm_id, power_name, objects, location, area)
     select synth_id, 'attachment', source_line_objects(objects), st_centroid(area), area
         from attachment_stations;
+
+update power_line l
+    set extent = a.extent,
+        terminals = minimal_terminals(a.extent, a.areas)
+    from attached_lines a where a.line_id = l.osm_id;
 
 delete from power_line where osm_id in (
     select source_id from line_attachments

@@ -157,8 +157,8 @@ insert into power_type_names (power_name, power_type)
 
 
 /* we could read this out of the planet_osm_point table, but i'd
- * prefer calculating under my own control -
- * spherical pseudomercator (900913) is flawed, but used by osm2pgsql and scigrid  */
+ * prefer calculating under my own control */
+
 
 insert into node_geometry (node_id, point)
        select id, st_setsrid(st_makepoint(lon/100.0, lat/100.0), 3857)
