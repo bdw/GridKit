@@ -1,10 +1,18 @@
 begin;
 drop table if exists shared_nodes_joint;
+drop table if exists node_joint_split;
 create table shared_nodes_joint (
     node_id varchar(64),
     objects text[],
     location geometry(point,3857)
 );
+/*
+create table node_joint_split (
+    source_id varchar(64),
+    extent    geometry(linestring, 3857),
+    nodes     geometry(multipolygon, 3857)
+);
+*/
 insert into shared_nodes_joint (node_id, objects, location)
     select concat('n', s.node_id), s.way_id, n.point
         from shared_nodes s
@@ -15,4 +23,6 @@ insert into shared_nodes_joint (node_id, objects, location)
                 path_idx[2] not in (0, 1)
             )
         );
+
+
 commit;

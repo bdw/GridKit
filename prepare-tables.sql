@@ -78,19 +78,19 @@ create table power_line (
 -- todo, split function preparation from this file
 create function buffered_terminals(line geometry(linestring)) returns geometry(linestring) as $$
 begin
-    return (select st_buffer(st_union(st_startpoint(line), st_endpoint(line)), 50));
+    return st_buffer(st_union(st_startpoint(line), st_endpoint(line)), least(50.0, st_length(line)/3.0));
 end
 $$ language plpgsql;
 
 create function buffered_station_point(point geometry(point)) returns geometry(polygon) as $$
 begin
-    return (select st_buffer(point, 50));
+    return st_buffer(point, 50);
 end;
 $$ language plpgsql;
 
 create function buffered_station_area(area geometry(polygon)) returns geometry(polygon) as $$
 begin
-    return (select st_convexhull(st_buffer(area, least(sqrt(st_area(area)), 100))));
+    return st_convexhull(st_buffer(area, least(sqrt(st_area(area)), 100)));
 end
 $$ language plpgsql;
 
@@ -230,9 +230,10 @@ insert into power_line (
 create index power_station_area   on power_station using gist(area);
 create index power_line_extent    on power_line    using gist(extent);
 create index power_line_terminals on power_line    using gist(terminals);
+create index power_line_objects   on power_line    btree(objects);
 create sequence synthetic_objects start 1;
 
 commit;
-
+-- this is an optimization,
 vacuum analyze power_line;
 vacuum analyze power_station;
