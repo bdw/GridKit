@@ -2,7 +2,6 @@
 begin;
 drop table if exists merged_stations;
 
-
 create table merged_stations (
        synth_id varchar(64),
        osm_id  text,
@@ -10,6 +9,7 @@ create table merged_stations (
        area    geometry(geometry, 3857)
 );
 
+/* Recursive union-find implementation. Only feasible becuase this set is initially pretty small */
 with recursive overlapping_stations(osm_id, objects) as (
         select min(b.osm_id) as osm_id, array_agg(b.osm_id order by b.osm_id) as objects
                 from power_station a
@@ -30,7 +30,7 @@ with recursive overlapping_stations(osm_id, objects) as (
          );
 
 insert into power_station (osm_id, power_name, objects, location, area)
-       select synth_id, 'merged', objects, ST_Centroid(area), area
+       select synth_id, 'merge', objects, ST_Centroid(area), area
               from merged_stations;
 delete from power_station where osm_id in (select unnest(objects) from merged_stations);
 

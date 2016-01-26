@@ -1,4 +1,4 @@
-﻿begin;
+begin;
 drop table if exists shared_nodes;
 create table shared_nodes (
     node_id bigint,

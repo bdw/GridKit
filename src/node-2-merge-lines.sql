@@ -1,4 +1,4 @@
-﻿begin;
+begin;
 drop table if exists node_line_pair;
 drop table if exists node_line_set;
 drop table if exists node_merged_lines;

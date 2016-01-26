@@ -17,7 +17,7 @@ insert into line_joins (synth_id, terminal_id, area, objects)
        group by s.k having count(*) > 2;
 
 insert into power_station (osm_id, power_name, objects, location, area)
-       select synth_id, 'join', objects, st_centroid(area), area
+       select synth_id, 'joint', objects, st_centroid(area), area
               from line_joins;
 
 delete from terminal_intersections where id in (

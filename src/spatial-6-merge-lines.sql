@@ -65,7 +65,7 @@ insert into merged_lines (synth_id, extent, source, objects)
        group by s.k, s.e having count(*) >= 2;
 
 insert into power_line (osm_id, power_name, objects, extent, terminals)
-    select synth_id, 'merged', objects, extent, buffered_terminals(extent)
+    select synth_id, 'merge', objects, extent, buffered_terminals(extent)
         from merged_lines;
 
 delete from power_line where osm_id in (select unnest(source) from merged_lines);

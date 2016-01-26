@@ -151,9 +151,8 @@ insert into power_type_names (power_name, power_type)
               ('minor_cable', 'l'),
               ('minor_line', 'l'),
               -- virtual elements
-              ('attachment', 'v'),
-              ('merged', 'v'),
-              ('join', 'v');
+              ('merge', 'v'),
+              ('joint', 'v');
 
 
 /* we could read this out of the planet_osm_point table, but i'd

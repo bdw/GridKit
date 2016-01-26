@@ -34,6 +34,7 @@ create table attached_lines (
     primary key (line_id)
 );
 
+/* Find all lines that other lines are attaching to */
 insert into line_attachments (source_id, attach_id, extent, attachments)
     select b.osm_id, array_agg(distinct a.osm_id), b.extent,
            st_multi(st_union(st_buffer(st_intersection(a.terminals, b.extent), 1)))
@@ -42,11 +43,13 @@ insert into line_attachments (source_id, attach_id, extent, attachments)
               and not st_intersects(a.terminals, b.terminals)
        group by b.osm_id, b.extent;
 
+/* Create segments for the split line */
 insert into attachment_split_lines (synth_id, source_id, extent)
     select concat('z', nextval('synthetic_objects')), source_id,
            (st_dump(st_difference(extent, attachments))).geom
         from line_attachments;
 
+/* Create a station for each attachment point */
 insert into attachment_stations (synth_id, objects, area)
     select concat('a', nextval('synthetic_objects')), attach_id || source_id::text,
            (st_dump(attachments)).geom
@@ -60,7 +63,8 @@ insert into attached_lines (line_id, extent, station_id, areas)
         join attachment_stations s on a.source_id = any(s.objects)
         group by l.osm_id;
 
-/* Two queries are easier than a single 4-way monster query */
+/* Extend the attached lines to connect cleanly with the attachment station. 
+ * Two queries are easier than a single 4-way monster query */
 update attached_lines
     set extent = connect_lines(st_shortestline(st_startpoint(extent), areas), extent)
     where st_intersects(st_buffer(st_startpoint(extent), 50), areas)
@@ -71,7 +75,7 @@ update attached_lines
     where st_intersects(st_buffer(st_endpoint(extent), 50), areas)
         and st_distance(st_endpoint(extent), areas) > 1;
 
-
+/* Create power lines and stations */
 insert into power_line (osm_id, power_name, tags, objects, extent, terminals)
     select s.synth_id, l.power_name, l.tags, source_line_objects(array[s.source_id]),
            s.extent, minimal_terminals(s.extent, a.attachments) as terminals
@@ -80,7 +84,7 @@ insert into power_line (osm_id, power_name, tags, objects, extent, terminals)
         join power_line l on l.osm_id = s.source_id;
 
 insert into power_station (osm_id, power_name, objects, location, area)
-    select synth_id, 'attachment', source_line_objects(objects), st_centroid(area), area
+    select synth_id, 'joint', source_line_objects(objects), st_centroid(area), area
         from attachment_stations;
 
 update power_line l
