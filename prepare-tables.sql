@@ -19,7 +19,7 @@ drop function if exists connect_lines(a geometry(linestring), b geometry(linestr
 -- minimal buffer arround a point given area with which it should intersect
 drop function if exists minimal_buffer(p geometry(point), a geometry(multipolygon));
 drop function if exists minimal_terminals(l geometry(linestring), a geometry(multipolygon));
-
+drop function if exists reuse_terminals(a geometry(multipolygon), b geometry(multipolygon));
 
 
 create table node_geometry (
@@ -137,6 +137,15 @@ begin
 end
 $$ language plpgsql;
 
+create function reuse_terminals(a geometry(multipolygon), b geometry(multipolygon))
+       returns geometry(multipolygon) as $$
+begin
+    return case when st_intersects(st_geometryn(a, 1), st_geometryn(b, 1)) then st_union(st_geometryn(a, 2), st_geometryn(b, 2))
+                when st_intersects(st_geometryn(a, 2), st_geometryn(b, 1)) then st_union(st_geometryn(a, 1), st_geometryn(b, 2))
+                when st_intersects(st_geometryn(a, 1), st_geometryn(b, 2)) then st_union(st_geometryn(a, 2), st_geometryn(b, 1))
+                                                                           else st_union(st_geometryn(a, 1), st_geometryn(b, 1)) end;
+end
+$$ language plpgsql;
 
 
 

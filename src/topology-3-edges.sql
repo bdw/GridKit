@@ -11,6 +11,7 @@ create table problem_lines (
        station_area geometry(geometry, 3857)
 );
 
+
 create table topology_edges (
     line_id varchar(64),
     station_id text[],
@@ -37,6 +38,7 @@ insert into problem_lines (line_id, station_id, line_extent, line_terminals, sta
      select l.osm_id as line_id, array_agg(s.osm_id) as station_id, l.extent, l.terminals, st_union(s.area)
             from power_line l join power_station s on st_intersects(s.area, l.terminals)
             group by l.osm_id, l.extent, l.terminals having count(*) > 2;
+
 
 insert into topology_edges (line_id, station_id, line_extent, station_locations)
     select l.osm_id, array_agg(s.osm_id), l.extent, array_agg(s.location)
