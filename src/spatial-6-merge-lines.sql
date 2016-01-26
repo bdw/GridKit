@@ -67,7 +67,7 @@ insert into merged_lines (synth_id, extent, terminals, source, objects)
     select concat('m', nextval('synthetic_objects')), s.e, s.t,
            array_agg(v), source_line_objects(array_agg(v))
        from line_sets s join power_line l on s.v = l.osm_id
-       group by s.k, s.e having count(*) >= 2;
+       group by s.k, s.e, s.t having count(*) >= 2;
 
 insert into power_line (osm_id, power_name, objects, extent, terminals)
     select synth_id, 'merge', objects, extent, terminals from merged_lines;

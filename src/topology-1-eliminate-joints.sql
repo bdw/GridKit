@@ -15,6 +15,7 @@ create table dangling_lines (
 create table redundant_joints (
     station_id varchar(64),
     line_id    varchar(64) array[2],
+    station_location geometry(point, 3857),
     line_extent geometry(linestring, 3857) array[2]
 );
 
@@ -27,7 +28,7 @@ create table rejoin_sets (
     v varchar(64),
     k varchar(64),
     e geometry(linestring, 3857),
-    t geometry(multipolygon, 3857),
+    t geometry(geometry, 3857),
     primary key (v)
 );
 
@@ -35,7 +36,7 @@ create table rejoin_lines (
    synth_id  varchar(64),
    source_id varchar(64) array,
    extent    geometry(linestring, 3857),
-   terminals geometry(multipolygon, 3857)
+   terminals geometry(geometry, 3857)
 );
 
 create index rejoin_sets_k on rejoin_sets using btree(k);
@@ -47,8 +48,8 @@ insert into dangling_lines (line_id, extent)
 
 delete from power_line where osm_id in (select line_id from dangling_lines);
 
-insert into redundant_joints (station_id, line_id, line_extent)
-    select s.osm_id, array_agg(l.osm_id order by l.osm_id), array_agg(l.extent)
+insert into redundant_joints (station_id, line_id, station_location, line_extent)
+    select s.osm_id, array_agg(l.osm_id order by l.osm_id), s.location, array_agg(l.extent)
         from power_station s join power_line l on st_intersects(s.area, l.terminals)
         where s.power_name = 'joint' group by s.osm_id having count(*) <= 2;
 
@@ -57,8 +58,8 @@ delete from power_station where osm_id in (select station_id from redundant_join
 insert into rejoin_pairs (src, dst)
    select line_id[1], line_id[2] from redundant_joints;
 
-insert into rejoin_sets (v, k, e)
-   select osm_id, osm_id, extent from power_line where osm_id in (
+insert into rejoin_sets (v, k, e, t)
+   select osm_id, osm_id, extent, terminals from power_line where osm_id in (
       select unnest(line_id) from redundant_joints
   );
 

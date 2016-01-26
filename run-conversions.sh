@@ -19,3 +19,6 @@ psql -f src/spatial-5a-line-terminal-intersections.sql || exit 1
 psql -f src/spatial-5b-mutual-terminal-intersections.sql || exit 1
 psql -f src/spatial-5c-joint-stations.sql || exit 1
 psql -f src/spatial-6-merge-lines.sql || exit 1
+
+# topological algorithms
+psql -f src/topology-1-eliminate-redundant-joints.sql || exit 1
