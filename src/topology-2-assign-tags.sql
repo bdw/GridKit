@@ -12,12 +12,27 @@ create table merged_tags (
     primary key (osm_id)
 );
 
+
+drop function if exists setmerge(a anyarray, b anyelement);
+create function setmerge(a anyarray, b anyelement) returns anyarray
+as
+$$
+begin
+    return array_agg(distinct e order by e) from (
+        select unnest(a || b) as e
+    ) f;
+end
+$$
+language plpgsql;
+
+
 drop function if exists merge_power_tags(a hstore array);
 create function merge_power_tags (a hstore array) returns hstore as $$
 declare
     r hstore;
     t hstore;
     k text;
+    v text;
 begin
     r = hstore('_merged', 'yes');
     for t in select unnest(a) loop
@@ -26,7 +41,8 @@ begin
                 r = r || hstore(k, t->k);
             elsif (r->k) != (t->k) and k in ('voltage', 'wires', 'cables', 'frequency') then
                 -- assume we can't fix this now, so join them separated by semicolons
-                r = r || hstore(k, (r->k) || ';' || (t->k));
+                v = array_to_string(setmerge(string_to_array(r->k, ';'), t->k), ';');
+                r = r || hstore(k, v)
             end if;
         end loop;
     end loop;
