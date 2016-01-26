@@ -230,7 +230,7 @@ insert into power_line (
 create index power_station_area   on power_station using gist(area);
 create index power_line_extent    on power_line    using gist(extent);
 create index power_line_terminals on power_line    using gist(terminals);
-create index power_line_objects   on power_line    btree(objects);
+create index power_line_objects   on power_line    using btree(objects);
 create sequence synthetic_objects start 1;
 
 commit;

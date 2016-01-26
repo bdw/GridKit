@@ -9,8 +9,8 @@ create table line_joins (
 
 insert into line_joins (synth_id, terminal_id, area, objects)
     select concat('j', nextval('synthetic_objects')),
-           array_agg(s.v) as terminal_id, st_union(t.area) as area,
-           array_agg(distinct (select unnest(l.objects))) as objects
+           array_agg(s.v) as terminal_id, st_union(t.area),
+           source_line_objects(array_agg(t.osm_id))
        from terminal_sets s
        join line_terminals t on t.id = s.v
        join power_line l on l.osm_id = t.osm_id

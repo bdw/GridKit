@@ -1,7 +1,7 @@
 ﻿begin;
 drop table if exists node_line_pair;
 drop table if exists node_line_set;
-drop table if exists node_line_merged;
+drop table if exists node_merged_lines;
 
 create table node_line_pair (
     src varchar(64),
@@ -17,7 +17,7 @@ create table node_line_set (
 );
 
 
-create table node_line_merged (
+create table node_merged_lines (
     synth_id varchar(64),
     objects  text[],
     extent   geometry(linestring, 3857)
@@ -58,8 +58,14 @@ begin
 end
 $$ language plpgsql;
 
-insert into node_line_merged (synth_id, objects, extent)
+insert into node_merged_lines (synth_id, objects, extent)
     select concat('nm', nextval('synthetic_objects')), array_agg(v), e
         from node_line_set group by k, e;
+
+insert into power_line (osm_id, power_name, objects, extent, terminals)
+     select synth_id, 'merged', objects, extent, buffered_terminals(extent)
+         from node_merged_lines;
+
+delete from power_line where osm_id in (select unnest(objects) from node_merged_lines);
 
 commit;
