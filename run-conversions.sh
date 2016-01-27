@@ -12,7 +12,8 @@ psql -f src/node-3-line-joints.sql || exit 1
 # spatial algorithms benefit from reduction of work from shared node
 # algorithms
 psql -f src/spatial-1-merge-stations.sql || exit 1
-psql -f src/spatial-2-eliminate-internal-lines.sql || exit 1
+psql -f src/spatial-2a-eliminate-internal-lines.sql || exit 1
+psql -f src/spatial-2b-eliminate-duplicate-lines.sql || exit 1
 psql -f src/spatial-3-eliminate-line-overlap.sql || exit 1
 psql -f src/spatial-4-attachment-joints.sql || exit 1
 psql -f src/spatial-5a-line-terminal-intersections.sql || exit 1
@@ -21,4 +22,5 @@ psql -f src/spatial-5c-joint-stations.sql || exit 1
 psql -f src/spatial-6-merge-lines.sql || exit 1
 
 # topological algorithms
-psql -f src/topology-1-eliminate-redundant-joints.sql || exit 1
+psql -f src/topology-1-eliminate-joints.sql || exit 1
+psql -f src/topology-2-assign-tags.sql || exit 1

@@ -27,6 +27,7 @@ language plpgsql;
 
 
 drop function if exists merge_power_tags(a hstore array);
+
 create function merge_power_tags (a hstore array) returns hstore as $$
 declare
     r hstore;
@@ -42,7 +43,7 @@ begin
             elsif (r->k) != (t->k) and k in ('voltage', 'wires', 'cables', 'frequency') then
                 -- assume we can't fix this now, so join them separated by semicolons
                 v = array_to_string(setmerge(string_to_array(r->k, ';'), t->k), ';');
-                r = r || hstore(k, v)
+                r = r || hstore(k, v);
             end if;
         end loop;
     end loop;
