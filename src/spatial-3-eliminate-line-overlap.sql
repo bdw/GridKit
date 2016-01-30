@@ -29,7 +29,8 @@ insert into split_lines (synth_id, source_id, segment)
 
 insert into power_line (osm_id, power_name, tags, extent, terminals, objects)
     select s.synth_id, l.power_name, l.tags, s.segment,
-           minimal_terminals(s.segment, i.areas), array[s.source_id]
+           minimal_terminals(s.segment, i.areas),
+           source_line_objects(array[s.source_id])
         from split_lines s
         join line_intersections i on i.line_id = s.source_id
         join power_line l on l.osm_id = s.source_id;
