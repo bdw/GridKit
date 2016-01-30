@@ -23,4 +23,6 @@ psql -f src/spatial-6-merge-lines.sql || exit 1
 
 # topological algorithms
 psql -f src/topology-1-eliminate-joints.sql || exit 1
-psql -f src/topology-2-assign-tags.sql || exit 1
+psql -f src/topology-2a-assign-tags.sql || exit 1
+psql -f src/topology-2b-electrical-properties.sql || exit 1
+

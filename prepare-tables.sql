@@ -48,11 +48,13 @@ create table relation_member (
 
 create table electrical_properties (
        osm_id varchar(64),
-       part_nr int default 0,
-       frequency float null,
-       voltage int null,
-       conductor_bundles int null,
-       subconductors int null
+       frequency float array,
+       voltage int array,
+       conductor_bundles int array,
+       subconductors int array,
+       power_name varchar(64),
+       operator text,
+       name text
 );
 
 create table power_station (
