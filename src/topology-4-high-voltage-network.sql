@@ -4,9 +4,11 @@ drop table if exists high_voltage_edges;
 
 /*
 nb - can we replace this with an update? maybe if we add a boolean high_voltage field to nodes and edges
+
 select unnest(station_id) from topology_edges t join electrical_properties e on t.line_id = e.osm_id where 220000 <= any(voltage) and not 16.7 = all(frequency)
 union
 select station_id from topology_nodes t join electrical_properties e on t.station_id = e.osm_id where 220000 <= any(voltage) and not 16.7 = all(frequency)
+
 */
 
 with recursive high_voltage_nodes(osm_id) as (
