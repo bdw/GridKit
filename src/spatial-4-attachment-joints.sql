@@ -78,7 +78,7 @@ update attached_lines
 /* Create power lines and stations */
 insert into power_line (osm_id, power_name, tags, objects, extent, terminals)
     select s.synth_id, l.power_name, l.tags, source_line_objects(array[s.source_id]),
-           s.extent, minimal_terminals(s.extent, a.attachments) as terminals
+           s.extent, minimal_terminals(s.extent, a.attachments, l.terminals) as terminals
         from attachment_split_lines s
         join line_attachments a on a.source_id = s.source_id
         join power_line l on l.osm_id = s.source_id;
@@ -89,7 +89,7 @@ insert into power_station (osm_id, power_name, objects, location, area)
 
 update power_line l
     set extent = a.extent,
-        terminals = minimal_terminals(a.extent, a.areas)
+        terminals = minimal_terminals(a.extent, a.areas, l.terminals)
     from attached_lines a where a.line_id = l.osm_id;
 
 delete from power_line where osm_id in (

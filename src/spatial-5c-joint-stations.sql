@@ -20,6 +20,12 @@ insert into power_station (osm_id, power_name, objects, location, area)
        select synth_id, 'joint', objects, st_centroid(area), area
               from line_joins;
 
+
+update power_line l
+       set terminals = minimal_terminals(l.extent, j.area, l.terminals)
+       from line_joins j where l.osm_id = any(j.objects);
+
+
 delete from terminal_intersections where id in (
        select id from terminal_intersections i
               join line_joins j on

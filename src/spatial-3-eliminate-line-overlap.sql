@@ -20,7 +20,7 @@ insert into line_intersections (line_id, station_id, extent, areas)
     select l.osm_id, array_agg(s.osm_id), l.extent, st_multi(st_union(s.area))
         from power_line l
         join power_station s on st_intersects(l.extent, s.area)
-       group by l.osm_id, l.extent;
+        group by l.osm_id, l.extent;
 
 insert into split_lines (synth_id, source_id, segment)
     select concat('s', nextval('synthetic_objects')), line_id,
@@ -29,7 +29,7 @@ insert into split_lines (synth_id, source_id, segment)
 
 insert into power_line (osm_id, power_name, tags, extent, terminals, objects)
     select s.synth_id, l.power_name, l.tags, s.segment,
-           minimal_terminals(s.segment, i.areas),
+           minimal_terminals(s.segment, i.areas, l.terminals),
            source_line_objects(array[s.source_id])
         from split_lines s
         join line_intersections i on i.line_id = s.source_id

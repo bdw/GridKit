@@ -13,7 +13,7 @@ psql -f src/node-3-line-joints.sql || exit 1
 # algorithms
 psql -f src/spatial-1-merge-stations.sql || exit 1
 psql -f src/spatial-2a-eliminate-internal-lines.sql || exit 1
-psql -f src/spatial-2b-eliminate-duplicate-lines.sql || exit 1
+#psql -f src/spatial-2b-eliminate-duplicate-lines.sql || exit 1
 psql -f src/spatial-3-eliminate-line-overlap.sql || exit 1
 psql -f src/spatial-4-attachment-joints.sql || exit 1
 psql -f src/spatial-5a-line-terminal-intersections.sql || exit 1

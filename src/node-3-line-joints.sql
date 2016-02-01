@@ -48,7 +48,7 @@ insert into node_split_lines (synth_id, source_id, segment, nodes)
 
 insert into power_line (osm_id, power_name, tags, extent, terminals, objects)
     select s.synth_id, l.power_name, l.tags, s.segment,
-           minimal_terminals(s.segment, s.nodes),
+           minimal_terminals(s.segment, s.nodes, l.terminals),
            source_line_objects(array[source_id])
         from node_split_lines s join power_line l on l.osm_id = s.source_id;
 

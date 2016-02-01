@@ -13,6 +13,12 @@ create table problem_lines (
     station_area geometry(geometry, 3857)
 );
 
+create table dangling_lines (
+    line_id varchar(64),
+    extent geometry(linestring, 3857)
+);
+
+
 create table topology_edges (
     line_id varchar(64),
     station_id varchar(64) array,
@@ -31,10 +37,6 @@ create table topology_nodes (
     primary key (station_id)
 );
 
-create table dangling_lines (
-    line_id varchar(64),
-    extent geometry(linestring, 3857)
-);
 
 
 

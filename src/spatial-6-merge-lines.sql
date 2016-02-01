@@ -19,11 +19,11 @@ create table line_sets (
 
 
 create table merged_lines (
-       synth_id varchar(64),
-       extent   geometry(linestring, 3857),
-       terminals geometry(geometry, 3857),
-       source text[],
-       objects  text[]
+    synth_id varchar(64),
+    extent   geometry(linestring, 3857),
+    terminals geometry(geometry, 3857),
+    source text[],
+    objects  text[]
 );
 
 
@@ -55,7 +55,7 @@ begin
         if s.k != d.k then
             update line_sets set k = s.k where k = d.k;
             update line_sets set e = connect_lines(s.e, d.e),
-                                 t = reuse_terminals(s.t, d.t)
+                                 t = connect_lines_terminals(s.t, d.t)
                 where k = s.k;
         end if;
      end loop;

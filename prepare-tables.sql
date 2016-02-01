@@ -16,10 +16,10 @@ drop function if exists buffered_station_area(geometry(polygon));
 drop function if exists source_line_objects(text[]);
 drop function if exists source_station_objects(text[]);
 drop function if exists connect_lines(a geometry(linestring), b geometry(linestring));
--- minimal buffer arround a point given area with which it should intersect
-drop function if exists minimal_buffer(p geometry(point), a geometry(multipolygon));
-drop function if exists minimal_terminals(l geometry(linestring), a geometry(multipolygon));
-drop function if exists reuse_terminals(a geometry(multipolygon), b geometry(multipolygon));
+drop function if exists connect_lines_terminals(geometry, geometry);
+drop function if exists reuse_terminal(geometry, geometry, geometry);
+drop function if exists minimal_terminals(geometry, geometry, geometry);
+
 
 
 create table node_geometry (
@@ -124,22 +124,7 @@ begin
 end
 $$ language plpgsql;
 
-create function minimal_buffer(p geometry(point), a geometry(multipolygon))
-       returns geometry(polygon) as $$
-begin
-    return case when st_distance(p, a) < 1 then st_buffer(p, 1) else st_buffer(p, 50) end;
-end
-$$ language plpgsql;
-
-create function minimal_terminals(l geometry(linestring), a geometry(multipolygon))
-       returns geometry(multipolygon) as $$
-begin
-    return st_multi(st_union(minimal_buffer(st_startpoint(l), a),
-                             minimal_buffer(st_endpoint(l), a)));
-end
-$$ language plpgsql;
-
-create function reuse_terminals(a geometry(multipolygon), b geometry(multipolygon))
+create function connect_lines_terminals(a geometry(multipolygon), b geometry(multipolygon))
        returns geometry(multipolygon) as $$
 begin
     return case when st_intersects(st_geometryn(a, 1), st_geometryn(b, 1)) then st_union(st_geometryn(a, 2), st_geometryn(b, 2))
@@ -148,6 +133,42 @@ begin
                                                                            else st_union(st_geometryn(a, 1), st_geometryn(b, 1)) end;
 end
 $$ language plpgsql;
+
+
+
+create function reuse_terminal(point geometry, terminals geometry, line geometry) returns geometry as $$
+declare
+    max_buffer float;
+begin
+    max_buffer = least(st_length(line) / 3.0, 50.0);
+    if st_geometrytype(terminals) = 'ST_MultiPolygon' then
+       if st_distance(st_geometryn(terminals, 1), point) < 1 then
+          return st_geometryn(terminals, 1);
+       elsif st_distance(st_geometryn(terminals, 2), point) < 1 then
+           return st_geometryn(terminals, 2);
+      else
+           return st_buffer(point, max_buffer);
+       end if;
+    else
+        return st_buffer(point, max_buffer);
+    end if;
+end;
+$$ language plpgsql;
+
+create function minimal_terminals(line geometry, area geometry, terminals geometry) returns geometry as $$
+declare
+    start_term geometry;
+    end_term   geometry;
+begin
+    start_term = case when st_distance(st_startpoint(line), area) < 1 then st_buffer(st_startpoint(line), 1)
+                      else reuse_terminal(st_startpoint(line), terminals, line) end;
+    end_term   = case when st_distance(st_endpoint(line), area) < 1 then st_buffer(st_endpoint(line), 1)
+                      else reuse_terminal(st_endpoint(line), terminals, line) end;
+    return st_union(start_term, end_term);
+end;
+$$ language plpgsql;
+
+
 
 
 

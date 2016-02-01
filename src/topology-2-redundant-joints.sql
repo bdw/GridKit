@@ -4,6 +4,7 @@ create table redundant_joints (
     station_id   varchar(64),
     line_id      varchar(64) array,
     connected_id varchar(64) array
+    primary key (station_id)
 );
 
 /* Collect all joint stations that connect just two stations, for they
