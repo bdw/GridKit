@@ -3,7 +3,8 @@ drop table if exists problem_lines;
 drop table if exists topology_edges;
 drop table if exists topology_nodes;
 drop table if exists dangling_lines;
-
+drop index if exists topology_edges_station_id;
+drop index if exists topology_nodes_line_id;
 
 create table problem_lines (
     line_id varchar(64),
@@ -62,6 +63,7 @@ insert into dangling_lines (line_id, extent)
        select line_id from problem_lines
     );
 
-
+create index topology_edges_station_id on topology_edges (station_id);
+create index topology_nodes_line_id on topology_nodes (line_id);
 
 commit;

@@ -27,4 +27,4 @@ psql -f src/topology-2-redundant-joints.sql || exit 1
 exit 0
 psql -f src/topology-3a-assign-tags.sql || exit 1
 psql -f src/topology-3b-electrical-properties.sql || exit 1
-# psql -f src/topology-3-high-voltage-network.sql || exit 1
+# psql -f src/topology-4-high-voltage-network.sql || exit 1
