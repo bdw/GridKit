@@ -3,8 +3,6 @@ drop table if exists problem_lines;
 drop table if exists topology_edges;
 drop table if exists topology_nodes;
 drop table if exists dangling_lines;
-drop index if exists topology_edges_station_id;
-drop index if exists topology_nodes_line_id;
 
 create table problem_lines (
     line_id varchar(64),
@@ -38,6 +36,8 @@ create table topology_nodes (
     primary key (station_id)
 );
 
+create index topology_edges_station_id on topology_edges using gin(station_id);
+create index topology_nodes_line_id on topology_nodes using gin(line_id);
 
 
 
@@ -56,14 +56,12 @@ insert into topology_nodes (station_id, line_id, station_location, line_extents,
         from power_station s join topology_edges e on s.osm_id = any(e.station_id)
         group by s.osm_id;
 
+
 insert into dangling_lines (line_id, extent)
     select osm_id, extent from power_line where osm_id not in (
        select line_id from topology_edges
        union all
        select line_id from problem_lines
     );
-
-create index topology_edges_station_id on topology_edges (station_id);
-create index topology_nodes_line_id on topology_nodes (line_id);
 
 commit;

@@ -1,6 +1,7 @@
 -- assign tags to stations missing them
 begin;
 drop table if exists osm_tags;
+drop table if exists merged_tags;
 create table osm_tags (
     osm_id varchar(64),
     tags   hstore,
