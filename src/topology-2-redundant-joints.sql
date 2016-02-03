@@ -1,21 +1,9 @@
 begin;
 drop table if exists redundant_joints;
-drop table if exists simplified_split_lines;
+drop table if exists redundant_splits;
+drop table if exists simplified_splits;
 drop table if exists removed_nodes;
 drop table if exists removed_edges;
-drop function if exists simplification_distortion(geometry, geometry array, geometry);
-
-create function simplification_distortion(point geometry, lines geometry array, area geometry) returns float
-       as $$
-declare
-    simple_line geometry(linestring);
-    avg_length  float;
-begin
-    simple_line = st_shortestline(point, area);
-    avg_length  = avg((select st_length(e) from (select unnest(lines) as e) f));
-    return abs(st_length(simple_line) - avg_length);
-end;
-$$ language plpgsql;
 
 
 create table redundant_joints (
@@ -25,14 +13,23 @@ create table redundant_joints (
     primary key (station_id)
 );
 
-create table simplified_split_lines (
+create table redundant_splits (
+    joint_id varchar(64),
+    left_station_id varchar(64),
+    left_line_id varchar(64) array,
+    left_avg_length float,
+    right_station_id varchar(64),
+    right_line_id varchar(64) array,
+    right_avg_length float
+);
+
+create table simplified_splits (
+    synth_id varchar(64),
     joint_id varchar(64),
     station_id varchar(64),
-    line_id varchar(64) array,
-    joint_location geometry(point, 3857),
-    station_area   geometry(polygon, 3857),
-    line_extents   geometry(linestring, 3857) array,
-    replacement    geometry(linestring, 3857)
+    source_id varchar(64) array,
+    original_extents geometry(multilinestring, 3857),
+    simplified_extent geometry(linestring, 3857)
 );
 
 create table removed_nodes (
@@ -58,13 +55,16 @@ insert into redundant_joints (station_id, line_id, connected_id)
     group by station_id having count(distinct connected_id) <= 2;
 
 /* very much faster than the other one */
-/*
-select j.station_id, j.connected_id
-        array((select line_id from topology_edges e where e.line_id = any(j.line_id) and j.connected_id[1] = any(e.station_id))) as left_id,
-        array((select line_id from topology_edges e where e.line_id = any(j.line_id) and j.connected_id[2] = any(e.station_id))) as right_id,
-        from redundant_joints j where array_length(connected_id, 1) = 2;
-*/
+insert into redundant_splits (joint_id, left_station_id, right_station_id, left_line_id, right_line_id, left_avg_length, right_avg_length)
+       select j.station_id, j.connected_id[1], j.connected_id[2],
+              array((select line_id from topology_edges e where e.line_id = any(j.line_id) and j.connected_id[1] = any(e.station_id))),
+              array((select line_id from topology_edges e where e.line_id = any(j.line_id) and j.connected_id[2] = any(e.station_id))),
+              (select avg(st_length(line_extent)) from topology_edges e where e.line_id = any(j.line_id) and j.connected_id[1] = any(e.station_id)),
+              (select avg(st_length(line_extent)) from topology_edges e where e.line_id = any(j.line_id) and j.connected_id[2] = any(e.station_id))
+              from redundant_joints j
+              where array_length(connected_id, 1) = 2 and array_length(line_id, 1) > 2;
 
+insert into simplified_lines
 
 -- remove dangling joints
 insert into removed_nodes (station_id)
