@@ -8,7 +8,7 @@ drop table if exists attached_lines;
 
 create table line_attachments (
     source_id   varchar(64),
-    attach_id   text[],
+    attach_id   varchar(64) array,
     extent      geometry(linestring, 3857),
     attachments geometry(multipolygon, 3857),
     primary key (source_id)
@@ -17,7 +17,7 @@ create table line_attachments (
 create table attachment_stations (
     synth_id varchar(64),
     area     geometry(polygon, 3857),
-    objects  text[]
+    objects  varchar(64) array
 );
 
 create table attachment_split_lines (
@@ -28,7 +28,7 @@ create table attachment_split_lines (
 
 create table attached_lines (
     line_id varchar(64),
-    station_id text[],
+    station_id varchar(64) array,
     extent geometry(linestring, 3857),
     areas  geometry(multipolygon, 3857),
     primary key (line_id)
@@ -51,7 +51,7 @@ insert into attachment_split_lines (synth_id, source_id, extent)
 
 /* Create a station for each attachment point */
 insert into attachment_stations (synth_id, objects, area)
-    select concat('a', nextval('synthetic_objects')), attach_id || source_id::text,
+    select concat('a', nextval('synthetic_objects')), attach_id || source_id,
            (st_dump(attachments)).geom
         from line_attachments;
 
@@ -76,16 +76,24 @@ update attached_lines
         and st_distance(st_endpoint(extent), areas) > 1;
 
 /* Create power lines and stations */
-insert into power_line (osm_id, power_name, tags, objects, extent, terminals)
-    select s.synth_id, l.power_name, l.tags, source_line_objects(array[s.source_id]),
-           s.extent, minimal_terminals(s.extent, a.attachments, l.terminals) as terminals
+insert into power_line (osm_id, power_name, extent, terminals)
+    select s.synth_id, l.power_name, s.extent,
+           minimal_terminals(s.extent, a.attachments, l.terminals)
         from attachment_split_lines s
         join line_attachments a on a.source_id = s.source_id
         join power_line l on l.osm_id = s.source_id;
 
-insert into power_station (osm_id, power_name, objects, location, area)
-    select synth_id, 'joint', source_line_objects(objects), st_centroid(area), area
+insert into power_station (osm_id, power_name, location, area)
+    select synth_id, 'joint', st_centroid(area), area
         from attachment_stations;
+
+insert into osm_objects(osm_id, objects)
+    select synth_id, source_objects(array[source_id]) from attachment_split_lines;
+
+insert into osm_objects (osm_id, objects)
+    select synth_id, source_objects(objects) from attachment_stations;
+
+
 
 update power_line l
     set extent = a.extent,

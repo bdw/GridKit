@@ -17,7 +17,6 @@ create table dangling_lines (
     extent geometry(linestring, 3857)
 );
 
-
 create table topology_edges (
     line_id varchar(64),
     station_id varchar(64) array,

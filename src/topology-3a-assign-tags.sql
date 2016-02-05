@@ -1,12 +1,10 @@
 -- assign tags to stations missing them
 begin;
-drop table if exists osm_tags;
 drop table if exists merged_tags;
-create table osm_tags (
-    osm_id varchar(64),
-    tags   hstore,
-    primary key (osm_id)
-);
+drop function if exists setmerge(a anyarray, b anyelement);
+drop function if exists merge_power_tags(a hstore array);
+
+
 create table merged_tags (
     osm_id varchar(64),
     tags   hstore,
@@ -14,7 +12,6 @@ create table merged_tags (
 );
 
 
-drop function if exists setmerge(a anyarray, b anyelement);
 create function setmerge(a anyarray, b anyelement) returns anyarray
 as
 $$
@@ -26,8 +23,6 @@ end
 $$
 language plpgsql;
 
-
-drop function if exists merge_power_tags(a hstore array);
 
 create function merge_power_tags (a hstore array) returns hstore as $$
 declare
@@ -53,10 +48,6 @@ end
 $$ language plpgsql;
 
 
-insert into osm_tags (osm_id, tags)
-    select concat('n', id), hstore(tags) from planet_osm_nodes;
-insert into osm_tags (osm_id, tags)
-    select concat('w', id), hstore(tags) from planet_osm_ways;
 
 update power_line l set tags = t.tags
     from osm_tags t

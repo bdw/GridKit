@@ -19,19 +19,18 @@ create table line_sets (
 
 
 create table merged_lines (
-    synth_id varchar(64),
-    extent   geometry(linestring, 3857),
-    terminals geometry(geometry, 3857),
-    source text[],
-    objects  text[]
+    synth_id  varchar(64),
+    source_id varchar(64) array,
+    extent    geometry(linestring, 3857),
+    terminals geometry(geometry, 3857)
 );
 
 
 insert into line_pairs (src, dst)
-   select distinct least(a.osm_id, b.osm_id), greatest(a.osm_id, b.osm_id)
-       from terminal_intersections i
-       join line_terminals a on a.id = i.src
-       join line_terminals b on b.id = i.dst;
+    select distinct least(a.osm_id, b.osm_id), greatest(a.osm_id, b.osm_id)
+        from terminal_intersections i
+        join line_terminals a on a.id = i.src
+        join line_terminals b on b.id = i.dst;
 
 insert into line_sets (k, v, e, t)
     select osm_id, osm_id, extent, terminals from power_line where osm_id in (
@@ -63,14 +62,16 @@ end
 $$ language plpgsql;
 
 
-insert into merged_lines (synth_id, extent, terminals, source, objects)
-    select concat('m', nextval('synthetic_objects')), s.e, s.t,
-           array_agg(v), source_line_objects(array_agg(v))
+insert into merged_lines (synth_id, extent, terminals, source_id)
+    select concat('m', nextval('synthetic_objects')), s.e, s.t, array_agg(v)
        from line_sets s join power_line l on s.v = l.osm_id
        group by s.k, s.e, s.t having count(*) >= 2;
 
-insert into power_line (osm_id, power_name, objects, extent, terminals)
-    select synth_id, 'merge', objects, extent, terminals from merged_lines;
+insert into power_line (osm_id, power_name, extent, terminals)
+    select synth_id, 'merge', extent, terminals from merged_lines;
 
-delete from power_line where osm_id in (select unnest(source) from merged_lines);
+insert into osm_objects (osm_id, objects)
+    select synth_id, source_objects(source_id) from merged_lines;
+
+delete from power_line where osm_id in (select unnest(source_id) from merged_lines);
 commit;

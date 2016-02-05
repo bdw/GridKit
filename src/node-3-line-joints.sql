@@ -5,7 +5,7 @@ drop table if exists node_split_lines;
 
 create table shared_nodes_joint (
     node_id varchar(64),
-    objects text[],
+    objects varchar(64) array,
     location geometry(point,3857)
 );
 
@@ -16,7 +16,7 @@ create table node_joint_lines (
 );
 
 create table node_split_lines (
-    synth_id varchar(64),
+    synth_id  varchar(64),
     source_id varchar(64),
     segment   geometry(linestring, 3857),
     nodes     geometry(multipolygon, 3857)
@@ -46,15 +46,22 @@ insert into node_split_lines (synth_id, source_id, segment, nodes)
            (st_dump(st_difference(extent, nodes))).geom, nodes
            from node_joint_lines;
 
-insert into power_line (osm_id, power_name, tags, extent, terminals, objects)
-    select s.synth_id, l.power_name, l.tags, s.segment,
-           minimal_terminals(s.segment, s.nodes, l.terminals),
-           source_line_objects(array[source_id])
+insert into power_line (osm_id, power_name, extent, terminals)
+    select s.synth_id, l.power_name, s.segment,
+           minimal_terminals(s.segment, s.nodes, l.terminals)
         from node_split_lines s join power_line l on l.osm_id = s.source_id;
 
-insert into power_station (osm_id, power_name, objects, location, area)
-    select node_id, 'joint', objects, location, st_buffer(location, 1)
+insert into power_station (osm_id, power_name, location, area)
+    select node_id, 'joint', location, st_buffer(location, 1)
         from shared_nodes_joint;
+
+
+insert into osm_objects (osm_id, objects)
+    select node_id, source_objects(objects) from shared_nodes_joint;
+
+insert into osm_objects (osm_id, objects)
+    select synth_id, source_objects(array[source_id])
+        from node_split_lines;
 
 delete from power_line where osm_id in (select source_id from node_joint_lines);
 
