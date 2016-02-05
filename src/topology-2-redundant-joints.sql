@@ -63,6 +63,14 @@ create table joint_line_set (
 );
 create index joint_line_set_k on joint_line_set (k);
 
+create table joint_merged_edges (
+    synth_id   varchar(64),
+    extent     geometry(linestring),
+    station_id varchar(64) array[2],
+    source_id  varchar(64) array,
+    joint_id   varchar(64) array
+);
+
 create table replaced_edges (
     station_id varchar(64) primary key,
     old_id     varchar(64) array,
@@ -91,7 +99,7 @@ insert into redundant_joints (station_id, line_id, connected_id)
     ) f where station_id != connected_id
     group by station_id having count(distinct connected_id) <= 2;
 
-/* very much faster than the other one */
+/* detect redundant splits, much faster than join-group one */
 insert into redundant_splits (joint_id, left_station_id, right_station_id, left_line_id, right_line_id, left_avg_length, right_avg_length)
        select j.station_id, j.connected_id[1], j.connected_id[2],
               array((select line_id from topology_edges e where e.line_id = any(j.line_id) and j.connected_id[1] = any(e.station_id))),
@@ -180,6 +188,10 @@ begin
     end loop;
 end;
 $$ language plpgsql;
+
+
+-- replace lines
+
 
 
 -- also remove dangling joints
