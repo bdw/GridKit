@@ -4,6 +4,13 @@ drop table if exists redundant_splits;
 drop table if exists simplified_splits;
 drop table if exists removed_nodes;
 drop table if exists removed_edges;
+drop function if exists array_replace(anyarray, anyarray, anyarray);
+
+create function array_replace(a anyarray, b anyarray, n anyarray) returns anyarray as $$
+begin
+    return array((select unnest(a) except select unnest(b) union select unnest(n)));
+end;
+$$ language plpgsql;
 
 
 create table redundant_joints (
@@ -31,6 +38,19 @@ create table simplified_splits (
     original_extents geometry(multilinestring, 3857),
     simplified_extent geometry(linestring, 3857)
 );
+
+create table joint_line_pair (
+    joint_id varchar(64),
+    left_id varchar(64),
+    right_id varchar(64)
+);
+
+create table joint_line_set (
+    v varchar(64) primary key,
+    k varchar(64),
+    e geometry(linestring)
+);
+create index joint_line_set_k on joint_line_set (k);
 
 create table removed_nodes (
     station_id varchar(64) primary key
@@ -64,23 +84,85 @@ insert into redundant_splits (joint_id, left_station_id, right_station_id, left_
               from redundant_joints j
               where array_length(connected_id, 1) = 2 and array_length(line_id, 1) > 2;
 
-insert into simplified_lines
+/* simplify split lines if possible  */
+with simplification_candidates (joint_id, source_id, station_id, distortion, full_length, original_extents, simplified_extent) as (
+    select joint_id, left_line_id, left_station_id, abs(st_distance(j.location, s.area) - left_avg_length), left_avg_length + right_avg_length,
+        (select st_multi(st_union(extent)) from power_line where osm_id = any(left_line_id)), st_shortestline(j.area, s.area)
+        from redundant_splits r
+        join power_station j on j.osm_id = joint_id
+        join power_station s on s.osm_id = left_station_id
+        where array_length(left_line_id, 1) > 1
+    union all
+    select joint_id, right_line_id, right_station_id, abs(st_distance(j.location, s.area) - right_avg_length), left_avg_length + right_avg_length,
+        (select st_multi(st_union(extent)) from power_line where osm_id = any(right_line_id)), st_shortestline(j.area, s.area)
+        from redundant_splits r
+        join power_station j on j.osm_id = joint_id
+        join power_station s on s.osm_id = right_station_id
+        where array_length(right_line_id, 1) > 1
+)
+insert into simplified_splits (synth_id, joint_id, source_id, station_id, original_extents, simplified_extent)
+    select concat('y', nextval('synthetic_objects')), joint_id, source_id, station_id, original_extents, simplified_extent
+        from simplification_candidates where distortion < 300 and (distortion < 100 or distortion/full_length <= 0.05);
+
+-- replace split lines by their simplified variants
+insert into power_line (osm_id, power_name, objects, extent, terminals)
+     select synth_id, 'simplified', source_line_objects(source_id), simplified_extent,
+            st_buffer(st_union(st_startpoint(simplified_extent), st_endpoint(simplified_extent)), 1)
+            from simplified_splits;
+delete from power_line where osm_id in (select unnest(source_id) from simplified_splits);
+
+
+-- replace edges in joints with simplified edges, subquery necessary because we may replace multiple synth_id per line
+update redundant_joints j set line_id = array_replace(j.line_id, u.source_id, u.synth_id)
+    from (
+        select joint_id, array_agg(distinct synth_id) as synth_id, array_agg(source_id) as source_id from
+               (select joint_id, synth_id, unnest(source_id) as source_id from simplified_splits) f group by joint_id) u
+    where j.station_id = u.joint_id;
+
+-- create pairs out of simple joints
+insert into joint_line_pair (joint_id, left_id, right_id)
+    select station_id, least(line_id[1], line_id[2]), greatest(line_id[1], line_id[2])
+        from redundant_joints
+        where array_length(connected_id, 1) = 2 and array_length(line_id, 1) = 2;
+
+insert into joint_line_set (k, v, e)
+    select osm_id, osm_id, extent from power_line where osm_id in (
+        select unnest(line_id) from redundant_joints
+    );
+
+do $$
+declare
+    p joint_line_pair;
+    l joint_line_set;
+    r joint_line_set;
+begin
+    for p in select * from joint_line_pair loop
+        select * into l from joint_line_set where v = p.left_id;
+        select * into r from joint_line_set where v = p.right_id;
+        if l.k != r.k then
+            update joint_line_set set k = l.k where k = r.k;
+            update joint_line_set set e = connect_lines(l.e, r.e) where k = l.k;
+        end if;
+    end loop;
+end;
+$$ language plpgsql;
+
 
 -- remove dangling joints
 insert into removed_nodes (station_id)
-    select station_id from redundant_joints where array_length(connected_id, 1) = 1;
-
--- remove simple joints
+    select station_id from redundant_joints where array_length(connected_id, 1) = 1
+insert into removed_edges (line_id)
+    select distinct line_id from topology_edges e join removed_nodes n on n.station_id = any(e.station_id)
+        union
+    select distinct unnest(source_id) from simplified_splits;
 
 
 -- remove nodes, maybe make this a procedure?
-/*
 delete from topology_nodes where station_id in (select station_id from removed_nodes);
-insert into removed_edges (line_id)
-    select distinct line_id from topology_edges e join removed_nodes n on n.station_id = any(e.station_id);
 
 delete from topology_edges where line_id in (select line_id from removed_edges);
 update topology_nodes n set line_id = array_remove(n.line_id, e.line_id)
-       from removed_edges e where e.line_id = any(n.line_id);
-*/
+    from removed_edges e where e.line_id = any(n.line_id);
+
+select 1/0;
 commit;
