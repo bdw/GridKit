@@ -74,20 +74,23 @@ $$ language plpgsql;
 truncate electrical_properties;
 
 insert into electrical_properties (osm_id, frequency, voltage, conductor_bundles, subconductors, power_name, operator, name)
-    select osm_id, string_to_float_array(tags->'frequency', ';'), string_to_integer_array(tags->'voltage', ';'),
+    select l.osm_id, string_to_float_array(tags->'frequency', ';'), string_to_integer_array(tags->'voltage', ';'),
         string_to_integer_array(tags->'cables', ';'), number_of_wires(tags->'wires'),
         tags->'power', tags->'operator', tags->'name'
-        from power_line;
+        from power_line l join osm_tags t on t.osm_id = l.osm_id;
 
 insert into electrical_properties (osm_id, frequency, voltage, power_name, operator, name)
-    select osm_id, string_to_float_array(tags->'frequency', ';'), string_to_integer_array(tags->'voltage', ';'),
-        tags->'power', tags->'operator', tags->'name' from power_station where power_name != 'joint';
+    select s.osm_id, string_to_float_array(tags->'frequency', ';'), string_to_integer_array(tags->'voltage', ';'),
+        tags->'power', tags->'operator', tags->'name'
+        from power_station s join osm_tags t on t.osm_id = s.osm_id
+        where power_name != 'joint';
 
 /* joints are more like lines. */
 insert into electrical_properties (osm_id, frequency, voltage, conductor_bundles, subconductors, power_name, operator, name)
-    select osm_id, string_to_float_array(tags->'frequency', ';'), string_to_integer_array(tags->'voltage', ';'),
+    select s.osm_id, string_to_float_array(tags->'frequency', ';'), string_to_integer_array(tags->'voltage', ';'),
         string_to_integer_array(tags->'cables', ';'), number_of_wires(tags->'wires'),
         tags->'power', tags->'operator', tags->'name'
-        from power_station where power_name = 'joint';
+        from power_station s join osm_tags t on t.osm_id = s.osm_id
+        where power_name = 'joint';
 
 commit;

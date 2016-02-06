@@ -1,15 +1,9 @@
 -- assign tags to stations missing them
 begin;
-drop table if exists merged_tags;
 drop function if exists setmerge(a anyarray, b anyelement);
 drop function if exists merge_power_tags(a hstore array);
 
 
-create table merged_tags (
-    osm_id varchar(64),
-    tags   hstore,
-    primary key (osm_id)
-);
 
 
 create function setmerge(a anyarray, b anyelement) returns anyarray
@@ -31,7 +25,7 @@ declare
     k text;
     v text;
 begin
-    r = hstore('_merged', 'yes');
+    r = hstore('_merged', case when array_length(a, 1) > 1 then 'yes' else 'no' end);
     for t in select unnest(a) loop
         for k in select skeys(t) loop
             if not r ? k then
@@ -48,26 +42,22 @@ end
 $$ language plpgsql;
 
 
-
-update power_line l set tags = t.tags
-    from osm_tags t
-    where l.tags is null and array_length(l.objects, 1) = 1
-        and t.osm_id = l.objects[1];
-
-insert into merged_tags (osm_id, tags)
+insert into osm_tags (osm_id, tags)
     select l.osm_id, merge_power_tags(array_agg(t.tags))
-        from power_line l join osm_tags t on t.osm_id = any(l.objects)
-        where l.tags is null group by l.osm_id;
+       from power_line l
+       join osm_objects o on l.osm_id = o.osm_id
+       join osm_tags t on t.osm_id = any(o.objects)
+       where l.osm_id not in (select osm_id from osm_tags)
+       group by l.osm_id;
 
-insert into merged_tags (osm_id, tags)
+insert into osm_tags (osm_id, tags)
     select s.osm_id, merge_power_tags(array_agg(t.tags))
-        from power_station s join osm_tags t on t.osm_id = any(s.objects)
-        where s.tags is null group by s.osm_id;
+       from power_station s
+       join osm_objects o on s.osm_id = o.osm_id
+       join osm_tags t on t.osm_id = any(o.objects)
+       where s.osm_id not in (select osm_id from osm_tags)
+       group by s.osm_id;
 
-update power_line l set tags = m.tags
-       from merged_tags m where l.tags is null and m.osm_id = l.osm_id;
 
-update power_station s set tags = m.tags
-       from merged_tags m where s.tags is null and m.osm_id = s.osm_id;
 
 commit;
