@@ -3,7 +3,7 @@ drop table if exists high_voltage_nodes;
 drop table if exists high_voltage_edges;
 
 create table high_voltage_nodes (
-    station_id varchar(64)
+    station_id varchar(64),
 );
 create table high_voltage_edges (
     line_id varchar(64),

@@ -5,7 +5,7 @@ create table internal_lines (
     station_id varchar(64),
     extent geometry(linestring, 3857)
 );
-
+-- todo, merge internal lines information into power station
 insert into internal_lines (line_id, station_id, extent)
     select l.osm_id, s.osm_id, l.extent
        from power_line l join power_station s

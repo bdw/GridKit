@@ -135,7 +135,7 @@ insert into topology_edges (line_id, station_id, line_extent, station_locations)
         join power_station a on a.osm_id = station_id[1]
         join power_station b on b.osm_id = station_id[2];
 
-delete from topology_edges where line_id in (select unnest(old_id) from replaced_edges);
+
 
 -- replace edges in stations
 insert into replaced_edges (station_id, old_id, new_id)
@@ -145,11 +145,13 @@ insert into replaced_edges (station_id, old_id, new_id)
         select station_id[2], synth_id, unnest(source_id) from simplified_splits
     ) f (station_id, synth_id, source_id) group by station_id;
 
+delete from topology_edges where line_id in (select unnest(old_id) from replaced_edges);
+
 update topology_nodes n set line_id = array_replace(n.line_id, r.old_id, r.new_id)
        from replaced_edges r where n.station_id = r.station_id;
 
 update redundant_joints j set line_id = array_replace(j.line_id, r.old_id, r.new_id)
-       from replaced_edges r where r.station_id = j.joint_id;
+       from replaced_edges r where j.joint_id = r.station_id;
 
 
 -- create pairs out of simple joints
@@ -204,8 +206,7 @@ update topology_nodes n set line_id = array_replace(n.line_id, m.source_id, arra
 insert into removed_nodes (station_id)
     select joint_id from redundant_joints where array_length(station_id, 1) = 1
         union
-    select distinct n.station_id from topology_nodes n
-        join joint_merged_edges m on n.line_id <@ m.source_id;
+     select joint_id from joint_edge_pair; -- all joints in joint_edge_pair are paired up by definition
 
 insert into removed_edges (line_id)
     select distinct line_id from topology_edges e join removed_nodes n on n.station_id = any(e.station_id)
