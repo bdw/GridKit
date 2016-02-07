@@ -1,10 +1,11 @@
 begin;
-drop table if exists high_voltage_nodes;
-drop table if exists high_voltage_edges;
+drop table if exists high_voltage_nodes cascade;
+drop table if exists high_voltage_edges cascade;
 
 create table high_voltage_nodes (
-    station_id varchar(64),
+    station_id varchar(64)
 );
+
 create table high_voltage_edges (
     line_id varchar(64),
     left_id varchar(64),
@@ -12,15 +13,24 @@ create table high_voltage_edges (
 );
 
 with recursive high_voltage_stations (osm_id) as (
-    select n.station_id from topology_nodes n join electrical_properties p on p.osm_id = n.station_id
-        where 220000 <= any(p.voltage) and not 16.7 = all(p.frequency)
+    select n.station_id from topology_nodes n
+        join electrical_properties p on p.osm_id = n.station_id
+        where 220000 <= any(p.voltage) and (not 16.7 = all(p.frequency) or p.frequency is null)
+
         union
-    select unnest(station_id) from topology_edges e join electrical_properties p on p.osm_id = e.line_id
-        where 220000 <= any(p.voltage) and not 16.7 = all(p.frequency)
+
+   select unnest(station_id) from topology_edges e
+        join electrical_properties p on p.osm_id = e.line_id
+        where 220000 <= any(p.voltage) and (not 16.7 = all(p.frequency) or p.frequency is null)
+
         union
-    select unnest(station_id) from topology_edges e join high_voltage_stations h on array[h.osm_id] <@ e.station_id
+
+   select unnest(station_id) from topology_edges e
+       join high_voltage_stations h on array[h.osm_id] <@ e.station_id
        join electrical_properties p on p.osm_id = e.line_id
-       where not 220000 > all(p.voltage) and not 16.7 = all(p.frequency)
+       where (not 220000 > all(p.voltage) or p.voltage is null)
+         and (not 16.7 = all(p.frequency) or p.frequency is null)
+
 ) insert into high_voltage_nodes (station_id)
        select * from high_voltage_stations;
 
