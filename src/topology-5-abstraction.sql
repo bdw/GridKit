@@ -60,8 +60,11 @@ insert into heuristic_links (v_id_1, v_id_2, osm_id, osm_objects, line, length_m
            join heuristic_vertices b on b.osm_id = l.station_id[2];
 
 create table heuristic_vertices_highvoltage as
-       select * from heuristic_vertices where osm_id in (select station_id from high_voltage_nodes);
+    select * from heuristic_vertices where osm_id in (select station_id from high_voltage_nodes);
 
 create table heuristic_links_highvoltage as
-       select * from heuristic_links where osm_id in (select line_id from high_voltage_edges);
+   select * from heuristic_links where osm_id in (select line_id from high_voltage_edges);
+
+
+
 commit;
