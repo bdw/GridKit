@@ -1,8 +1,8 @@
 begin;
-drop view if exists heuristic_vertices_highvoltage;
-drop view if exists heuristic_links_highvoltage;
 drop table if exists heuristic_links cascade;
 drop table if exists heuristic_vertices cascade;
+drop table if exists heuristic_vertices_highvoltage;
+drop table if exists heuristic_links_highvoltage;
 
 
 -- simplify to format of scigrid export
@@ -59,9 +59,9 @@ insert into heuristic_links (v_id_1, v_id_2, osm_id, osm_objects, line, length_m
            join heuristic_vertices a on a.osm_id = l.station_id[1]
            join heuristic_vertices b on b.osm_id = l.station_id[2];
 
-create view heuristic_vertices_highvoltage as
+create table heuristic_vertices_highvoltage as
        select * from heuristic_vertices where osm_id in (select station_id from high_voltage_nodes);
 
-create view heuristic_links_highvoltage as
+create table heuristic_links_highvoltage as
        select * from heuristic_links where osm_id in (select line_id from high_voltage_edges);
 commit;

@@ -25,11 +25,16 @@ with recursive high_voltage_stations (osm_id) as (
 
         union
 
-   select unnest(station_id) from topology_edges e
-       join high_voltage_stations h on array[h.osm_id] <@ e.station_id
-       join electrical_properties p on p.osm_id = e.line_id
-       where (not 220000 > all(p.voltage) or p.voltage is null)
-         and (not 16.7 = all(p.frequency) or p.frequency is null)
+   select station_id from (
+       select line_id, unnest(station_id) from topology_edges e
+           join high_voltage_stations h on array[h.osm_id] <@ e.station_id
+   ) f (line_id, station_id)
+      join electrical_properties l on l.osm_id = f.line_id
+      join electrical_properties s on s.osm_id = f.station_id
+       where (not 220000 > all(l.voltage) or l.voltage is null)
+         and (not 16.7 = all(l.frequency) or l.frequency is null)
+         and (not 220000 > all(s.voltage) or s.voltage is null)
+         and (not 16.7 = all(s.frequency) or s.frequency is null)
 
 ) insert into high_voltage_nodes (station_id)
        select * from high_voltage_stations;

@@ -225,5 +225,5 @@ update topology_nodes n set line_id = array_replace(n.line_id, r.line_id, array[
 
 delete from topology_nodes where station_id in (select station_id from removed_nodes);
 delete from topology_edges where line_id in (select line_id from removed_edges);
-
+delete from topology_nodes where array_length(line_id, 1) is null;
 commit;
