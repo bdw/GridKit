@@ -3,6 +3,7 @@ import io
 import csv
 import random
 import itertools
+import heapq
 from recordclass import recordclass
 from numpy import array
 
@@ -10,7 +11,7 @@ class Station(recordclass('Station', b'station_id name operator voltages frequen
     def __hash__(self):
         return hash(self.station_id)
 
-class Line(recordclass('Line', b'line_id operator left right frequency voltage resistance reactance capacitance')):
+class Line(recordclass('Line', b'line_id operator left right length frequencies voltages resistance reactance capacitance')):
     def __hash__(self):
         return hash(self.line_id)
 
@@ -56,58 +57,47 @@ class Network(object):
         while True:
             changes = 0
             for station in self.stations.itervalues():
-                line_voltages    = [line.voltage for line in station.lines if line.voltage is not None]
-                line_frequencies = [line.frequency for line in station.lines if line.frequency is not None]
-                if station.voltages is None:
-                    if line_voltages:
-                        station.voltages = list(set(line_voltages))
-                        changes         += 1
-                # what about conflicting voltages?
-                elif any(lv not in station.voltages for lv in line_voltages):
-                    station.voltages = list(set(station.voltages + line_voltages))
-                    changes += 1
+                line_voltages    = set(v for line in station.lines for v in line.voltages)
+                line_frequencies = set(f for line in station.lines for f in line.frequencies)
+                if line_voltages - station.voltages:
+                    station.voltages |= line_voltages
+                    changes          += 1
+                if line_frequencies - station.frequencies:
+                    station.frequencies |= line_frequencies
+                    changes             += 1
 
-                if station.frequencies is None:
-                    if line_frequencies:
-                        station.frequencies = list(set(line_frequencies))
-                        changes += 1
-                elif any(lf not in station.frequencies for lf in line_frequencies):
-                    station.frequencies = list(set(station.frequencies + line_frequencies))
-                    changes += 1
 
             for line in self.lines.itervalues():
-                if line.frequency is None:
-                    if line.left.frequencies is not None:
-                        if line.right.frequencies is not None:
-                            shared_frequency = set(line.left.frequencies) & set(line.right.frequencies)
-                            if shared_frequency:
-                                line.frequency = max(shared_frequency)
-                                changes += 1
-                        elif len(line.left.frequencies) == 1:
-                            line.frequency = line.left.frequencies[0]
-                            changes += 1
-                    elif line.right.frequencies is not None and len(line.right.frequencies) == 1:
-                        line.frequency = line.right.frequencies[0]
+                shared_frequencies = line.left.frequencies & line.right.frequencies
+                if shared_frequencies and not line.frequencies & shared_frequencies:
+                    line.frequencies |= shared_frequencies
+                    changes += 1
+                elif not line.frequencies:
+                    if line.left.frequencies:
+                        line.frequencies = set(line.left.frequencies)
+                        changes += 1
+                    elif line.right.frequencies:
+                        line.frequencies = set(line.right.frequencies)
                         changes += 1
 
-                if line.voltage is None:
-                    # this never seems to happen though!
-                    if line.left.voltages is not None:
-                        if line.right.voltages is not None:
-                            shared_voltage = set(line.left.voltages) & set(line.right.voltages)
-                            if shared_voltage:
-                                line.voltage = max(shared_voltage)
-                                changes += 1
-                        elif len(line.left.voltages) == 1:
-                            line.voltage = line.left.voltages[0]
-                            changes += 1
-                    elif line.right.frequencies is not None and len(line.right.frequencies == 1):
-                        line.frequency = line.right.frequencies[0]
+                shared_voltages = line.left.voltages & line.right.voltages
+                if shared_voltages and not line.voltages & shared_voltages:
+                    line.voltages |= shared_voltages
+                    changes += 1
+                elif not line.voltages:
+                    if line.left.voltages:
+                        line.voltages = set(line.left.voltages)
+                        changes += 1
+                    elif line.right.voltages:
+                        line.voltages = set(line.right.voltages)
+                        changes += 1
 
             if changes == 0:
                 break
             totals.append(changes)
-
+            if len(totals) > 1000:
+                print(totals)
+                raise Exception('dont think ill be stopping soon')
         return totals
 
     def report(self):
@@ -116,28 +106,32 @@ class Network(object):
         broken_lines    = 0
         mismatches      = 0
         for station in self.stations.itervalues():
-            if station.voltages is None or station.frequencies is None:
+            if not station.voltages or not station.frequencies:
                 broken_stations += 1
             for line in station.lines:
-                if station.frequencies is not None:
-                    if line.frequency not in station.frequencies:
+                if station.frequencies:
+                    if line.frequencies ^ station.frequencies:
                         mismatches += 1
                         continue
-                elif line.frequency is not None:
+                elif line.frequencies:
                     mismatches += 1
                     continue
-                if station.voltages is not None:
-                    if line.voltage not in station.voltages:
+                if station.voltages:
+                    if line.voltages ^ station.voltages:
                         mismatches += 1
                         continue
-                elif line.voltage is not None:
+                elif line.voltages:
                     mismatches += 1
                     continue
 
         for line in self.lines.itervalues():
-            if line.voltage is None or line.frequency is None:
+            if not line.voltages or not line.frequencies:
                 broken_lines += 1
         return broken_stations, broken_lines, mismatches
+
+    def find(self, from_station, to_station):
+        lines = []
+        pass
 
     def _area_number(self, area_name):
         if area_name not in self._areas:
@@ -146,6 +140,8 @@ class Network(object):
         return self._areas[area_name]
 
     def powercase(self, loads=None):
+        # FIXME this needs fixing for the complex-lines case
+
         # loads is a map of station id -> load, either positive or
         # negative; a negative load is represented by a generator.
 
@@ -312,8 +308,8 @@ class ScigridNetwork(Network):
                 station_id  = row['v_id']
                 name        = row['name'].decode('utf-8')
                 operator    = row['operator'].decode('utf-8')
-                voltages    = map(int, row['voltage'].decode('utf-8').split(';')) if row['voltage'] else None
-                frequencies = map(float, row['frequency'].decode('utf-8').split(';')) if row['frequency'] else None
+                voltages    = set(map(int, row['voltage'].split(';')) if row['voltage'] else [])
+                frequencies = set(map(float, row['frequency'].split(';')) if row['frequency'] else [])
                 self.stations[row['v_id']] = Station(station_id=station_id, name=name, operator=operator,
                                                      voltages=voltages, frequencies=frequencies, lines=list())
 
@@ -323,15 +319,16 @@ class ScigridNetwork(Network):
                 operator    = row['operator'].decode('utf-8')
                 left        = self.stations[row['v_id_1']]
                 right       = self.stations[row['v_id_2']]
-
+                length      = float(row['length_m'])
                 resistance  = float(row['r_ohmkm']) * int(row['length_m']) / 1000 if row['r_ohmkm'] else None
                 reactance   = float(row['x_ohmkm']) * int(row['length_m']) / 1000 if row['x_ohmkm'] else None
                 capacitance = float(row['c_nfkm']) * int(row['length_m']) / 1000  if row['c_nfkm'] else  None
-                frequency   = float(row['frequency']) if row['frequency'] else None
-                voltage     = int(row['voltage']) if row['voltage'] else None
 
-                line  = Line(line_id=line_id, operator=operator, left=left, right=right,
-                             voltage=voltage, frequency=frequency,
+                # use complex voltages for lines
+                frequencies = set(map(float, row['frequency'].split(';')) if row['frequency'] else [])
+                voltages    = set(map(int, row['voltage'].split(';')) if row['voltage'] else [])
+                line  = Line(line_id=line_id, operator=operator, left=left, right=right, length=length,
+                             voltages=voltages, frequencies=frequencies,
                              resistance=resistance, reactance=reactance, capacitance=capacitance)
                 self.lines[row['l_id']] = line
                 left.lines.append(line)
