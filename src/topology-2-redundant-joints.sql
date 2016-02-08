@@ -99,13 +99,13 @@ insert into redundant_joints (joint_id, line_id, station_id)
 
 with redundant_joint_splits (station_id, line_id) as (
     select distinct array[least(joint_id, station_id[1]), greatest(joint_id, station_id[1])],
-        array((select e.line_id from topology_edges e where e.line_id = any(j.line_id) and j.station_id[1] = any(e.station_id)))
+           array((select e.line_id from topology_edges e where e.line_id = any(j.line_id) and j.station_id[1] = any(e.station_id)))
         from redundant_joints j where array_length(j.station_id, 1) = 2 and array_length(j.line_id, 1) > 2
 
    union
 
    select distinct array[least(joint_id, station_id[2]), greatest(joint_id, station_id[2])],
-       array((select e.line_id from topology_edges e where e.line_id = any(j.line_id) and j.station_id[2] = any(e.station_id)))
+          array((select e.line_id from topology_edges e where e.line_id = any(j.line_id) and j.station_id[2] = any(e.station_id)))
        from redundant_joints j where array_length(j.station_id, 1) = 2 and array_length(j.line_id, 1) > 2
 ) insert into redundant_splits (station_id, line_id)
    select station_id, line_id from redundant_joint_splits where array_length(line_id, 1) > 1;

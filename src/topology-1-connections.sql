@@ -17,6 +17,7 @@ create table dangling_lines (
     extent geometry(linestring, 3857)
 );
 
+
 create table topology_edges (
     line_id varchar(64),
     station_id varchar(64) array,
@@ -34,6 +35,8 @@ create table topology_nodes (
     topology_name varchar(64),
     primary key (station_id)
 );
+
+
 
 create index topology_edges_station_id on topology_edges using gin(station_id);
 create index topology_nodes_line_id on topology_nodes using gin(line_id);
@@ -62,6 +65,7 @@ insert into dangling_lines (line_id, extent)
        union all
        select line_id from problem_lines
     );
+
 
 commit;
 vacuum analyze topology_edges;

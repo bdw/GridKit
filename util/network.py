@@ -4,12 +4,16 @@ import csv
 import random
 import itertools
 import heapq
+import math
 from recordclass import recordclass
 from numpy import array
 
 class Station(recordclass('Station', b'station_id lat lon name operator voltages frequencies lines')):
     def __hash__(self):
         return hash(self.station_id)
+
+    def distance(self, other):
+        return math.sqrt((self.lat-other.lat)**2 + (self.lon-other.lon)**2)
 
 class Line(recordclass('Line', b'line_id operator left right length frequencies voltages resistance reactance capacitance')):
     def __hash__(self):
@@ -129,9 +133,38 @@ class Network(object):
                 broken_lines += 1
         return broken_stations, broken_lines, mismatches
 
-    def find(self, from_station, to_station):
-        lines = []
-        pass
+    def find(self, from_id, to_id):
+        # A* algorithm to find shortest path
+        scores    = dict()
+        come_from = dict()
+        seen      = set()
+        path      = list()
+        start     = self.stations[from_id]
+        goal      = self.stations[to_id]
+        queue     = [(0,start)]
+        while queue:
+            score, station = heapq.heappop(queue)
+            if station is goal:
+                break
+            seen.add(station)
+            for line in station.lines:
+                neighbor = line.left if line.right is station else line.right
+                if neighbor in seen:
+                    continue
+                h_score = goal.distance(neighbor)
+                g_score = score + line.length
+                if scores.get(neighbor, g_score+1) < g_score:
+                    continue
+                heapq.heappush(queue, (g_score + h_score, neighbor))
+                come_from[neighbor] = station
+        if station is not goal:
+            return None
+        while station is not start:
+            path.append(station)
+            station = come_from[station]
+        path.append(start)
+        path.reverse()
+        return path
 
     def _area_number(self, area_name):
         if area_name not in self._areas:
@@ -186,8 +219,9 @@ class Network(object):
 
         for line in self.lines.itervalues():
             # create branches between stations
-            from_bus = station_to_bus[line.left.station_id, line.voltage]
-            to_bus   = station_to_bus[line.right.station_id, line.voltage]
+            for voltage in line.voltages:
+                from_bus = station_to_bus[line.left.station_id, voltage]
+                to_bus   = station_to_bus[line.right.station_id, voltage]
             edges.append(self._make_line(line, from_bus, to_bus))
 
         ppc['bus']    = array(nodes)
