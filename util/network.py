@@ -7,7 +7,7 @@ import heapq
 from recordclass import recordclass
 from numpy import array
 
-class Station(recordclass('Station', b'station_id name operator voltages frequencies lines')):
+class Station(recordclass('Station', b'station_id lat lon name operator voltages frequencies lines')):
     def __hash__(self):
         return hash(self.station_id)
 
@@ -110,14 +110,14 @@ class Network(object):
                 broken_stations += 1
             for line in station.lines:
                 if station.frequencies:
-                    if line.frequencies ^ station.frequencies:
+                    if line.frequencies - station.frequencies:
                         mismatches += 1
                         continue
                 elif line.frequencies:
                     mismatches += 1
                     continue
                 if station.voltages:
-                    if line.voltages ^ station.voltages:
+                    if line.voltages - station.voltages:
                         mismatches += 1
                         continue
                 elif line.voltages:
@@ -306,11 +306,13 @@ class ScigridNetwork(Network):
         with io.open(vertices_csv, 'rb') as handle:
             for row in csv.DictReader(handle, dialect=self._csv_dialect):
                 station_id  = row['v_id']
+                lat         = float(row['lat'])
+                lon         = float(row['lon'])
                 name        = row['name'].decode('utf-8')
                 operator    = row['operator'].decode('utf-8')
                 voltages    = set(map(int, row['voltage'].split(';')) if row['voltage'] else [])
                 frequencies = set(map(float, row['frequency'].split(';')) if row['frequency'] else [])
-                self.stations[row['v_id']] = Station(station_id=station_id, name=name, operator=operator,
+                self.stations[row['v_id']] = Station(station_id=station_id, lat=lat, lon=lon, name=name, operator=operator,
                                                      voltages=voltages, frequencies=frequencies, lines=list())
 
         with io.open(links_csv, 'rb') as handle:
