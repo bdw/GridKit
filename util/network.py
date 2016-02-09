@@ -13,7 +13,25 @@ class Station(recordclass('Station', b'station_id lat lon name operator voltages
         return hash(self.station_id)
 
     def distance(self, other):
-        return math.sqrt((self.lat-other.lat)**2 + (self.lon-other.lon)**2)
+        # See https://www.math.ksu.edu/~dbski/writings/haversine.pdf
+        # earths radius will be 6.371 km
+        radius  = 6.371 * 1000 * 1000
+        # first calculate on unit circle
+        theta_1 = math.radians(self.lat)
+        phi_1   = math.radians(self.lon)
+        theta_2 = math.radians(other.lat)
+        phi_2   = math.radians(other.lon)
+        x_1     = math.cos(theta_1) * math.cos(phi_1)
+        y_1     = math.cos(theta_1) * math.sin(phi_1)
+        z_1     = math.sin(phi_1)
+        x_2     = math.cos(theta_2) * math.cos(phi_2)
+        y_2     = math.cos(theta_2) * math.sin(phi_2)
+        z_2     = math.sin(phi_2)
+        direct  = math.sqrt((x_1-x_2)**2 + (y_1-y_2)**2 + (z_1-z_2)**2)
+        angle   = math.asin( (direct / 2) * math.sqrt(4 - direct**2))
+        # the error here is quite considerable, but in the right ballpark
+        return  radius * angle
+
 
 class Line(recordclass('Line', b'line_id operator left right length frequencies voltages resistance reactance capacitance')):
     def __hash__(self):
@@ -24,9 +42,9 @@ class Line(recordclass('Line', b'line_id operator left right length frequencies 
 
     @property
     def susceptance(self):
-        if self.capacitance is None or self.frequency is None:
+        if self.capacitance is None or not self.frequencies:
             return None
-        return self.capacitance * self.frequency
+        return self.capacitance * max(self.frequencies)
 
 class Network(object):
     def __init__(self):
@@ -339,22 +357,22 @@ class ScigridNetwork(Network):
     def read(self, vertices_csv, links_csv):
         with io.open(vertices_csv, 'rb') as handle:
             for row in csv.DictReader(handle, dialect=self._csv_dialect):
-                station_id  = row['v_id']
+                station_id  = int(row['v_id'])
                 lat         = float(row['lat'])
                 lon         = float(row['lon'])
                 name        = row['name'].decode('utf-8')
                 operator    = row['operator'].decode('utf-8')
                 voltages    = set(map(int, row['voltage'].split(';')) if row['voltage'] else [])
                 frequencies = set(map(float, row['frequency'].split(';')) if row['frequency'] else [])
-                self.stations[row['v_id']] = Station(station_id=station_id, lat=lat, lon=lon, name=name, operator=operator,
-                                                     voltages=voltages, frequencies=frequencies, lines=list())
+                self.stations[station_id] = Station(station_id=station_id, lat=lat, lon=lon, name=name, operator=operator,
+                                                    voltages=voltages, frequencies=frequencies, lines=list())
 
         with io.open(links_csv, 'rb') as handle:
             for i, row in enumerate(csv.DictReader(handle, dialect=self._csv_dialect)):
-                line_id     = row['l_id']
+                line_id     = int(row['l_id'])
                 operator    = row['operator'].decode('utf-8')
-                left        = self.stations[row['v_id_1']]
-                right       = self.stations[row['v_id_2']]
+                left        = self.stations[int(row['v_id_1'])]
+                right       = self.stations[int(row['v_id_2'])]
                 length      = float(row['length_m'])
                 resistance  = float(row['r_ohmkm']) * int(row['length_m']) / 1000 if row['r_ohmkm'] else None
                 reactance   = float(row['x_ohmkm']) * int(row['length_m']) / 1000 if row['x_ohmkm'] else None
@@ -366,7 +384,7 @@ class ScigridNetwork(Network):
                 line  = Line(line_id=line_id, operator=operator, left=left, right=right, length=length,
                              voltages=voltages, frequencies=frequencies,
                              resistance=resistance, reactance=reactance, capacitance=capacitance)
-                self.lines[row['l_id']] = line
+                self.lines[line_id] = line
                 left.lines.append(line)
                 right.lines.append(line)
 
