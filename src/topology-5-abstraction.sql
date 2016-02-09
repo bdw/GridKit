@@ -49,6 +49,7 @@ insert into heuristic_vertices (osm_id, osm_objects, location, typ, voltage, fre
            join osm_objects o on o.osm_id = n.station_id
            join osm_tags t on t.osm_id = n.station_id;
 
+
 insert into heuristic_links (v_id_1, v_id_2, osm_id, osm_objects, line, length_m, voltage, cables, wires, frequency, name, operator, ref)
     select a.v_id, b.v_id, l.line_id, o.objects, st_makeline(a.location, b.location), st_length(st_transform(l.line_extent, 4326)::geography),
            e.voltage, e.conductor_bundles, e.subconductors, e.frequency, e.name, e.operator, t.tags->'ref'

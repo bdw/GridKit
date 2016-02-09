@@ -21,75 +21,32 @@ drop function if exists connect_lines(a geometry(linestring), b geometry(linestr
 drop function if exists connect_lines_terminals(geometry, geometry);
 drop function if exists reuse_terminal(geometry, geometry, geometry);
 drop function if exists minimal_terminals(geometry, geometry, geometry);
-
-
-
-create table node_geometry (
-    node_id bigint,
-    point   geometry(point, 3857)
-);
-
-create table way_geometry (
-    way_id bigint,
-    line   geometry(linestring, 3857)
-);
-
-create table osm_tags (
-    osm_id varchar(64),
-    tags   hstore,
-    primary key (osm_id)
-);
-
-create table osm_objects (
-    osm_id varchar(64),
-    objects varchar(64) array,
-    primary key (osm_id)
-);
-
-/* lookup table for power types */
-create table power_type_names (
-    power_name varchar(64) primary key,
-    power_type char(1) not null,
-    check (power_type in ('s','l','r', 'v'))
-);
-
-create table relation_member (
-    relation_id bigint,
-    member_id   varchar(64) not null,
-    member_role varchar(64) null,
-    foreign key (relation_id) references planet_osm_rels (id)
-);
-
-create table electrical_properties (
-    osm_id varchar(64),
-    frequency float array,
-    voltage int array,
-    conductor_bundles int array,
-    subconductors int array,
-    power_name varchar(64),
-    operator text,
-    name text
-);
-
-create table power_station (
-    osm_id varchar(64),
-    power_name varchar(64) not null,
-    location geometry(point, 3857),
-    area geometry(polygon, 3857),
-    primary key (osm_id)
-);
-
-create table power_line (
-    osm_id varchar(64),
-    power_name varchar(64) not null,
-    extent    geometry(linestring, 3857),
-    terminals geometry(geometry, 3857),
-    primary key (osm_id)
-);
-
-
+drop function if exists array_replace(anyarray, anyarray, anyarray);
+drop function if exists array_remove(anyarray, anyarray);
+drop function if exists array_sym_diff(anyarray, anyarray);
 
 -- todo, split function preparation from this file
+create function array_remove(a anyarray, b anyarray) returns anyarray as $$
+begin
+    return array((select unnest(a) except select unnest(b)));
+end;
+$$ language plpgsql;
+
+create function array_replace(a anyarray, b anyarray, n anyarray) returns anyarray as $$
+begin
+    return array((select unnest(a) except select unnest(b) union select unnest(n)));
+end;
+$$ language plpgsql;
+
+create function array_sym_diff(a anyarray, b anyarray) returns anyarray as $$
+begin
+    return array(((select unnest(a) union select unnest(b))
+                   except
+                  (select unnest(a) intersect select unnest(b))));
+end;
+$$ language plpgsql;
+
+
 create function buffered_terminals(line geometry(linestring)) returns geometry(linestring) as $$
 begin
     return st_buffer(st_union(st_startpoint(line), st_endpoint(line)), least(50.0, st_length(line)/3.0));
@@ -172,6 +129,73 @@ begin
     return st_union(start_term, end_term);
 end;
 $$ language plpgsql;
+
+
+
+create table node_geometry (
+    node_id bigint,
+    point   geometry(point, 3857)
+);
+
+create table way_geometry (
+    way_id bigint,
+    line   geometry(linestring, 3857)
+);
+
+create table osm_tags (
+    osm_id varchar(64),
+    tags   hstore,
+    primary key (osm_id)
+);
+
+create table osm_objects (
+    osm_id varchar(64),
+    objects varchar(64) array,
+    primary key (osm_id)
+);
+
+/* lookup table for power types */
+create table power_type_names (
+    power_name varchar(64) primary key,
+    power_type char(1) not null,
+    check (power_type in ('s','l','r', 'v'))
+);
+
+create table relation_member (
+    relation_id bigint,
+    member_id   varchar(64) not null,
+    member_role varchar(64) null,
+    foreign key (relation_id) references planet_osm_rels (id)
+);
+
+create table electrical_properties (
+    osm_id varchar(64),
+    frequency float array,
+    voltage int array,
+    conductor_bundles int array,
+    subconductors int array,
+    power_name varchar(64),
+    operator text,
+    name text
+);
+
+create table power_station (
+    osm_id varchar(64),
+    power_name varchar(64) not null,
+    location geometry(point, 3857),
+    area geometry(polygon, 3857),
+    primary key (osm_id)
+);
+
+create table power_line (
+    osm_id varchar(64),
+    power_name varchar(64) not null,
+    extent    geometry(linestring, 3857),
+    terminals geometry(geometry, 3857),
+    primary key (osm_id)
+);
+
+
 
 
 /* all things recognised as certain stations */

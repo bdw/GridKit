@@ -37,7 +37,6 @@ create table topology_nodes (
 );
 
 
-
 create index topology_edges_station_id on topology_edges using gin(station_id);
 create index topology_nodes_line_id on topology_nodes using gin(line_id);
 

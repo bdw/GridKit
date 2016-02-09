@@ -22,7 +22,9 @@ psql -f src/spatial-6-merge-lines.sql || exit 1
 
 # topological algorithms
 psql -f src/topology-1-connections.sql || exit 1
-psql -f src/topology-2-redundant-joints.sql || exit 1
+psql -f src/topology-2a-dangling-joints.sql || exit 1
+psql -f src/topology-2b-redundant-splits.sql || exit 1
+psql -f src/topology-2c-redundant-joints.sql || exit 1
 psql -f src/topology-3a-assign-tags.sql || exit 1
 psql -f src/topology-3b-electrical-properties.sql || exit 1
 psql -f src/topology-4-high-voltage-network.sql || exit 1

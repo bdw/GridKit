@@ -43,21 +43,20 @@ $$ language plpgsql;
 
 
 insert into osm_tags (osm_id, tags)
-    select l.osm_id, merge_power_tags(array_agg(t.tags))
-       from power_line l
-       join osm_objects o on l.osm_id = o.osm_id
+    select e.line_id, merge_power_tags(array_agg(t.tags))
+       from topology_edges e
+       join osm_objects o on e.line_id = o.osm_id
        join osm_tags t on t.osm_id = any(o.objects)
-       where l.osm_id not in (select osm_id from osm_tags)
-       group by l.osm_id;
+       where e.line_id not in (select osm_id from osm_tags)
+       group by e.line_id;
 
 insert into osm_tags (osm_id, tags)
-    select s.osm_id, merge_power_tags(array_agg(t.tags))
-       from power_station s
-       join osm_objects o on s.osm_id = o.osm_id
+    select n.station_id, merge_power_tags(array_agg(t.tags))
+       from topology_nodes n
+       join osm_objects o on n.station_id = o.osm_id
        join osm_tags t on t.osm_id = any(o.objects)
-       where s.osm_id not in (select osm_id from osm_tags)
-       group by s.osm_id;
-
+       where n.station_id not in (select osm_id from osm_tags)
+       group by n.station_id;
 
 
 commit;

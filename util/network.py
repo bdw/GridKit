@@ -118,7 +118,6 @@ class Network(object):
                 break
             totals.append(changes)
             if len(totals) > 1000:
-                print(totals)
                 raise Exception('dont think ill be stopping soon')
         return totals
 
