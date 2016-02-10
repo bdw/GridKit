@@ -5,12 +5,29 @@ import random
 import itertools
 import heapq
 import math
-from recordclass import recordclass
-from numpy import array
+import warnings
+try:
+    from recordclass import recordclass
+except ImportError:
+    from collections import namedtuple as recordclass
+    warnings.warn("recordclass is necessary for Network.patch() to work")
+
+try:
+    from numpy import array
+    from matplotlib import pyplot
+except ImportError as e:
+    warnings.warn(e.message)
+
+
+
 
 class Station(recordclass('Station', b'station_id lat lon name operator voltages frequencies lines')):
     def __hash__(self):
         return hash(self.station_id)
+
+    @property
+    def coordinates(self):
+        return self.lon, self.lat
 
     def distance(self, other):
         # See https://www.math.ksu.edu/~dbski/writings/haversine.pdf
@@ -45,6 +62,32 @@ class Line(recordclass('Line', b'line_id operator left right length frequencies 
         if self.capacitance is None or not self.frequencies:
             return None
         return self.capacitance * max(self.frequencies)
+
+class Path(object):
+    def __init__(self, stations):
+        self.stations = stations
+        # make list of lines
+        self.lines    = list()
+        for i in range(1, len(stations)):
+            f = stations[i-1]
+            t = stations[i]
+            for l in f.lines:
+                if f is l.left:
+                    if t is l.right:
+                        break
+                elif t is l.left:
+                    break
+            self.lines.append(l)
+
+    @property
+    def length(self):
+        return sum(l.length for l in self.lines)
+
+    def __iter__(self):
+        return iter(self.stations)
+
+    def __repr__(self):
+        return 'Path of length {0} over [{1}]'.format(self.length, ', '.join(s.name for s in self.stations)).encode('utf-8')
 
 class Network(object):
     def __init__(self):
@@ -156,8 +199,11 @@ class Network(object):
         come_from = dict()
         seen      = set()
         path      = list()
-        start     = self.stations[from_id]
-        goal      = self.stations[to_id]
+        try:
+            start     = self.stations[from_id]
+            goal      = self.stations[to_id]
+        except KeyError:
+            return None
         queue     = [(0,start)]
         while queue:
             score, station = heapq.heappop(queue)
@@ -181,7 +227,19 @@ class Network(object):
             station = come_from[station]
         path.append(start)
         path.reverse()
-        return path
+        return Path(path)
+
+
+    def plot(self, figure=None, node_color='blue', edge_color='red'):
+        if figure is None:
+            figure = pyplot.figure()
+        axis = figure.add_subplot(1,1,1)
+        for line in self.lines.values():
+            axis.plot([line.left.lon, line.right.lon],
+                      [line.left.lat, line.right.lat], color=edge_color)
+        coordinates = [s.coordinates for s in self.stations.values()]
+        axis.plot(*zip(*coordinates), marker='o', color=node_color, lineStyle='None')
+        return figure
 
     def _area_number(self, area_name):
         if area_name not in self._areas:
@@ -190,8 +248,6 @@ class Network(object):
         return self._areas[area_name]
 
     def powercase(self, loads=None):
-        # FIXME this needs fixing for the complex-lines case
-
         # loads is a map of station id -> load, either positive or
         # negative; a negative load is represented by a generator.
 

@@ -45,52 +45,32 @@ end;
 $$ language plpgsql;
 
 
--- cleanup, anytime you remove edges, you might leave stations which still point to one
-do $$
-declare
-    last_count integer;
-    first_count integer;
-    new_count integer;
-begin
-    first_count = count(*) from topology_nodes;
-    last_count  = first_count;
-    loop
-        insert into removed_edges (line_id, extent)
-            select line_id, line_extent from topology_edges where line_id in (
-                select line_id from (
-                    select line_id, unnest(station_id)
-                ) f(line_id, station_id) where station_id not in (
-                    select station_id from topology_nodes
-                )
-            );
-        delete from topology_edges where line_id in (select line_id from removed_edges);
+-- we're going to remove edges, and finally nodes
+ insert into removed_edges (line_id, extent)
+    select line_id, line_extent from topology_edges where line_id in (
+        select line_id from (
+            select line_id, unnest(station_id)
+        ) f(line_id, station_id) where station_id not in (
+             select station_id from topology_nodes
+        )
+   );
+delete from topology_edges where line_id in (select line_id from removed_edges);
 
-        update topology_nodes n set line_id = array_remove(n.line_id, r.line_id)
-            from (
-                select station_id, array_agg(line_id) from (
-                    select station_id, unnest(line_id) from topology_nodes
-                 ) f(station_id, line_id) where line_id not in (
-                    select line_id from topology_edges
-                 ) group by station_id
-            ) r (station_id, line_id) where r.station_id = n.station_id;
+update topology_nodes n set line_id = array_remove(n.line_id, r.line_id)
+    from (
+        select station_id, array_agg(line_id) from (
+            select station_id, unnest(line_id) from topology_nodes
+        ) f(station_id, line_id) where line_id not in (
+            select line_id from topology_edges
+        ) group by station_id
+    ) r (station_id, line_id) where r.station_id = n.station_id;
 
-        insert into removed_nodes (station_id, location)
-            select station_id, station_location from topology_nodes where array_length(line_id, 1) is null;
-        delete from topology_nodes where station_id in (select station_id from removed_nodes);
+insert into removed_nodes (station_id, location)
+    select station_id, station_location from topology_nodes where array_length(line_id, 1) is null;
+delete from topology_nodes where station_id in (select station_id from removed_nodes);
 
-        new_count = count(*) from topology_nodes;
-        if new_count = last_count
-        then
-            raise notice 'total %', first_count - new_count;
-            exit;
-        end if;
-        raise notice 'removed %', last_count - new_count;
-        last_count = new_count;
-    end loop;
-    raise notice 'removed % edges', count(*) from removed_edges;
-end;
+-- this cannot result into newly 'dangling edges', because if those
+-- nodes were connected to anything, they wouldn't have been removed.
 
-
-$$ language plpgsql;
 commit;
 

@@ -9,6 +9,7 @@ psql -f src/node-1-find-shared.sql || exit 1
 psql -f src/node-2-merge-lines.sql || exit 1
 psql -f src/node-3-line-joints.sql || exit 1
 
+sleep 5
 # spatial algorithms benefit from reduction of work from shared node
 # algorithms
 psql -f src/spatial-1-merge-stations.sql || exit 1
@@ -20,6 +21,8 @@ psql -f src/spatial-5b-mutual-terminal-intersections.sql || exit 1
 psql -f src/spatial-5c-joint-stations.sql || exit 1
 psql -f src/spatial-6-merge-lines.sql || exit 1
 
+# allow database some cool-off time
+sleep 5
 # topological algorithms
 psql -f src/topology-1-connections.sql || exit 1
 psql -f src/topology-2a-dangling-joints.sql || exit 1

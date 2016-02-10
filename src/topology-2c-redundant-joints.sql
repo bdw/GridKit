@@ -82,6 +82,7 @@ insert into joint_merged_edges (synth_id, extent, station_id, source_id)
             select k, array_agg(v) from joint_edge_set group by k having count(*) > 1
        ) g(k,v) on s.v = g.k where array_length(s,1) is not null;
 
+
 insert into osm_objects (osm_id, objects)
     select synth_id, source_objects(source_id) from joint_merged_edges;
 

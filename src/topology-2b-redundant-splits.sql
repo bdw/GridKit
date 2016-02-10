@@ -46,10 +46,10 @@ insert into osm_objects (osm_id, objects)
 -- edges are only ever replaced, never removed, so we don't need to do a pruning step
 
 insert into topology_edges (line_id, station_id, line_extent, station_locations)
-    select synth_id, station_id, simple_extent, array[a.location, b.location]
-        from simplified_splits
-        join power_station a on a.osm_id = station_id[1]
-        join power_station b on b.osm_id = station_id[2];
+    select synth_id, s.station_id, simple_extent, array[a.station_location, b.station_location]
+        from simplified_splits s
+        join topology_nodes a on a.station_id = s.station_id[1]
+        join topology_nodes b on b.station_id = s.station_id[2];
 
 update topology_nodes n set line_id = array_replace(n.line_id, r.old_id, r.new_id)
    from (
