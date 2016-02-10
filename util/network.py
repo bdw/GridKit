@@ -16,7 +16,7 @@ try:
     from numpy import array
     from matplotlib import pyplot
 except ImportError as e:
-    warnings.warn(e.message)
+    warnings.warn(str(e))
 
 
 
