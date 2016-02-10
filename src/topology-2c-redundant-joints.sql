@@ -31,6 +31,8 @@ create table joint_merged_edges (
     station_id varchar(64) array[2],
     source_id  varchar(64) array
 );
+
+
 create index joint_merged_edges_source_id on joint_merged_edges using gin(source_id);
 
 insert into redundant_joints (joint_id, line_id, station_id)
@@ -92,12 +94,23 @@ insert into topology_edges (line_id, station_id, line_extent, station_locations)
            join topology_nodes a on a.station_id = e.station_id[1]
            join topology_nodes b on b.station_id = e.station_id[2];
 
+update topology_nodes n set line_id = array_replace(n.line_id, r.old_id, r.new_id)
+    from (
+         select station_id, array_agg(distinct old_id), array_agg(distinct new_id) from (
+             select station_id[1], unnest(source_id), synth_id from joint_merged_edges
+             union
+             select station_id[2], unnest(source_id), synth_id from joint_merged_edges
+         ) f (station_id, old_id, new_id)
+         group by station_id
+    ) r (station_id, old_id, new_id) where n.station_id = r.station_id;
+
 delete from topology_nodes where station_id in (select joint_id from joint_edge_pair);
 delete from topology_edges where line_id in (select unnest(source_id) from joint_merged_edges);
 
 -- end point updates
-update topology_nodes n set line_id = array_replace(n.line_id, m.source_id, array[m.synth_id])
-    from joint_merged_edges m where n.station_id = any(m.station_id);
 
 
 commit;
+vacuum analyze topology_edges;
+vacuum analyze topology_nodes;
+vacuum analyze osm_objects;

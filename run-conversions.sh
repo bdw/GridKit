@@ -23,6 +23,7 @@ psql -f src/spatial-6-merge-lines.sql || exit 1
 
 # allow database some cool-off time
 sleep 5
+
 # topological algorithms
 psql -f src/topology-1-connections.sql || exit 1
 psql -f src/topology-2a-dangling-joints.sql || exit 1
