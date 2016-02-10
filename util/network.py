@@ -79,6 +79,15 @@ class Path(object):
                     break
             self.lines.append(l)
 
+    def plot(self, figure=None, color='yellow'):
+        if figure is None:
+            figure = pyplot.figure()
+        axs = figure.add_subplot(1,1,1)
+        lat = [s.lat for s in self.stations]
+        lon = [s.lon for s in self.stations]
+        axs.plot(lon,lat, color=color)
+        return figure
+
     @property
     def length(self):
         return sum(l.length for l in self.lines)
