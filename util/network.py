@@ -49,6 +49,9 @@ class Station(recordclass('Station', b'station_id lat lon name operator voltages
         # the error here is quite considerable, but in the right ballpark
         return  radius * angle
 
+    def to_ewkt(self):
+        return 'SRID=4326;POINT({0} {1})'.format(self.lon, self.lat)
+
 
 class Line(recordclass('Line', b'line_id operator left right length frequencies voltages resistance reactance capacitance max_current')):
     def __hash__(self):
@@ -99,6 +102,13 @@ class Path(object):
         return 'Path of length {0} over [{1}]'.format(
             self.length, ', '.join(s.name for s in self.stations)
         ).encode('utf-8')
+
+    def to_ewkt(self):
+        return 'SRID=4326;LINESTRING({0})'.format(
+            ','.join('{0} {1}'.format(s.lon, s.lat) for s in self.stations)
+        )
+
+
 
 class Network(object):
     def __init__(self):

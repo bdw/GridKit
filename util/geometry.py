@@ -173,6 +173,10 @@ class Polygon(object):
             return True
         return False
 
+    def to_wkt(self):
+        return 'POLYGON(({0}))'.format(','.join('{0} {1}'.format(x, y) for (x,y) in self.points))
+
+
 if __name__ == '__main__':
     line_a = ((1,1), (3,4))
     line_b = ((1,3), (3,2))
