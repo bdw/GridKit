@@ -96,7 +96,9 @@ class Path(object):
         return iter(self.stations)
 
     def __repr__(self):
-        return 'Path of length {0} over [{1}]'.format(self.length, ', '.join(s.name for s in self.stations)).encode('utf-8')
+        return 'Path of length {0} over [{1}]'.format(
+            self.length, ', '.join(s.name for s in self.stations)
+        ).encode('utf-8')
 
 class Network(object):
     def __init__(self):
@@ -223,10 +225,10 @@ class Network(object):
                 neighbor = line.left if line.right is station else line.right
                 if neighbor in seen:
                     continue
-                h_score = goal.distance(neighbor)
                 g_score = score + line.length
                 if scores.get(neighbor, g_score+1) < g_score:
                     continue
+                h_score = goal.distance(neighbor)
                 heapq.heappush(queue, (g_score + h_score, neighbor))
                 come_from[neighbor] = station
         if station is not goal:
@@ -304,7 +306,7 @@ class Network(object):
             for voltage in line.voltages:
                 from_bus = station_to_bus[line.left.station_id, voltage]
                 to_bus   = station_to_bus[line.right.station_id, voltage]
-            edges.append(self._make_line(line, from_bus, to_bus))
+                edges.append(self._make_line(line, from_bus, to_bus))
 
         ppc['bus']    = array(nodes)
         ppc['gen']    = array(generators)
