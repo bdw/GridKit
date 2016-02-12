@@ -50,7 +50,7 @@ class Station(recordclass('Station', b'station_id lat lon name operator voltages
         return  radius * angle
 
 
-class Line(recordclass('Line', b'line_id operator left right length frequencies voltages resistance reactance capacitance')):
+class Line(recordclass('Line', b'line_id operator left right length frequencies voltages resistance reactance capacitance max_current')):
     def __hash__(self):
         return hash(self.line_id)
 
@@ -443,13 +443,14 @@ class ScigridNetwork(Network):
                 resistance  = float(row['r_ohmkm']) * int(row['length_m']) / 1000 if row['r_ohmkm'] else None
                 reactance   = float(row['x_ohmkm']) * int(row['length_m']) / 1000 if row['x_ohmkm'] else None
                 capacitance = float(row['c_nfkm']) * int(row['length_m']) / 1000  if row['c_nfkm'] else  None
-
+                max_current = float(row['i_th_max_a']) if row['i_th_max_a'] else None
                 # use complex voltages for lines
                 frequencies = set(map(float, row['frequency'].split(';')) if row['frequency'] else [])
                 voltages    = set(map(int, row['voltage'].split(';')) if row['voltage'] else [])
                 line  = Line(line_id=line_id, operator=operator, left=left, right=right, length=length,
                              voltages=voltages, frequencies=frequencies,
-                             resistance=resistance, reactance=reactance, capacitance=capacitance)
+                             resistance=resistance, reactance=reactance, capacitance=capacitance,
+                             max_current=max_current)
                 self.lines[line_id] = line
                 left.lines.append(line)
                 right.lines.append(line)
