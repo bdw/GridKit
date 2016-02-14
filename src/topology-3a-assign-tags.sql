@@ -38,31 +38,34 @@ insert into derived_tags (osm_id, tags)
         from osm_objects o
         join osm_tags t on t.osm_id = any(o.objects)
                        and o.osm_id != t.osm_id
-        where o.osm_id in (
-            select line_id from topology_edges union all select station_id from topology_nodes
+        where exists (
+            select line_id from topology_edges where o.osm_id = line_id
+            union all
+            select station_id from topology_nodes where o.osm_id = station_id
         )
         group by o.osm_id;
 
 insert into osm_tags (osm_id, tags)
-    select osm_id, tags from derived_tags
-       where osm_id not in (select osm_id from osm_tags);
+    select osm_id, tags from derived_tags d
+       where not exists (select * from osm_tags t where t.osm_id = d.osm_id);
 
 update osm_tags t set tags = d.tags
     from derived_tags d where d.osm_id = t.osm_id;
 
 
--- do a check. this should not be possible because all mapped objects
+
+-- do a check. after topology-3a this should not be possible because all mapped objects
 -- have at least a 'power' tag, so they should exist
 do $$
 declare
     missing_node_tags integer;
     missing_edge_tags integer;
 begin
-    missing_node_tags = count(*) from topology_nodes where station_id not in (
-        select osm_id from osm_tags
+    missing_node_tags = count(*) from topology_nodes where not exists (
+         select * from osm_tags where osm_id = station_id
     );
-    missing_edge_tags = count(*) from topology_edges where line_id not in (
-        select osm_id from osm_tags
+    missing_edge_tags = count(*) from topology_edges where not exists (
+        select * from osm_tags where osm_id = line_id
     );
     if missing_node_tags > 0
     then

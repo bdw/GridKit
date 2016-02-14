@@ -1,4 +1,4 @@
-﻿begin;
+begin;
 drop table if exists line_joints;
 create table line_joints (
     synth_id    varchar(64),
