@@ -24,6 +24,7 @@ drop function if exists minimal_terminals(geometry, geometry, geometry);
 drop function if exists array_replace(anyarray, anyarray, anyarray);
 drop function if exists array_remove(anyarray, anyarray);
 drop function if exists array_sym_diff(anyarray, anyarray);
+drop function if exists array_merge(anyarray, anyarray);
 
 -- todo, split function preparation from this file
 create function array_remove(a anyarray, b anyarray) returns anyarray as $$
@@ -43,6 +44,12 @@ begin
     return array(((select unnest(a) union select unnest(b))
                    except
                   (select unnest(a) intersect select unnest(b))));
+end;
+$$ language plpgsql;
+
+create function array_merge(a anyarray, b anyarray) returns anyarray as $$
+begin
+    return array(select unnest(a) union select unnest(b));
 end;
 $$ language plpgsql;
 
@@ -284,9 +291,9 @@ insert into osm_objects (osm_id, objects)
 
 -- initialize osm tags table
 insert into osm_tags (osm_id, tags)
-    select concat('n', id), hstore(tags) from planet_osm_nodes;
+    select concat('n', id), hstore(tags) from planet_osm_nodes where tags is not null;
 insert into osm_tags (osm_id, tags)
-    select concat('w', id), hstore(tags) from planet_osm_ways;
+    select concat('w', id), hstore(tags) from planet_osm_ways where tags is not null;
 
 
 create index power_station_area   on power_station using gist(area);
