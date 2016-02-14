@@ -1,4 +1,4 @@
-begin;
+﻿begin;
 drop table if exists line_joints;
 create table line_joints (
     synth_id    varchar(64),
@@ -13,7 +13,6 @@ insert into line_joints (synth_id, terminal_id, area, objects)
            array_agg(t.osm_id)
        from terminal_sets s
        join line_terminals t on t.id = s.v
-       join power_line l on l.osm_id = t.osm_id
        group by s.k having count(*) > 2;
 
 insert into power_station (osm_id, power_name, location, area)
