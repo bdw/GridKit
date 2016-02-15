@@ -6,4 +6,6 @@
 *.pdf
 jit-log.txt
 *.pyc
-distance-matrix.csv
+.Rdata
+.Rhistory
+__pycache__/
