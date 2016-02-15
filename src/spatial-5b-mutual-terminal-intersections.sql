@@ -1,11 +1,10 @@
 begin;
 drop table if exists terminal_sets;
 create table terminal_sets (
-    k int,
-    v int
+    v int primary key,
+    k int not null
 );
 create index terminal_sets_k on terminal_sets (k);
-create index terminal_sets_v on terminal_sets (v);
 insert into terminal_sets (k, v)
     select id, id from line_terminals;
 

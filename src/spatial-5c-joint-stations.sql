@@ -1,4 +1,4 @@
-begin;
+﻿begin;
 drop table if exists line_joints;
 create table line_joints (
     synth_id    varchar(64),
@@ -7,13 +7,16 @@ create table line_joints (
     area        geometry(polygon, 3857)
 );
 
-insert into line_joints (synth_id, terminal_id, area, objects)
-    select concat('j', nextval('synthetic_objects')),
-           array_agg(s.v) as terminal_id, st_union(t.area),
-           array_agg(t.osm_id)
-       from terminal_sets s
-       join line_terminals t on t.id = s.v
-       group by s.k having count(*) > 2;
+with grouped_terminals(terminal_id) as (
+	select array_agg(s.v)
+		from terminal_sets s
+		group by s.k having count(*) > 2
+) insert into line_joints (synth_id, terminal_id, objects, area)
+    select concat('j', nextval('synthetic_objects')), terminal_id,
+           array(select osm_id from line_terminals where id = any(terminal_id)),
+           (select st_union(area) from line_terminals where id = any(terminal_id))
+        from grouped_terminals;
+
 
 insert into power_station (osm_id, power_name, location, area)
     select synth_id, 'joint', st_centroid(area), area
