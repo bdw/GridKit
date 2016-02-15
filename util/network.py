@@ -21,7 +21,7 @@ except ImportError as e:
 
 
 
-class Station(recordclass('Station', b'station_id lat lon name operator voltages frequencies lines')):
+class Station(recordclass('Station', str('station_id lat lon name operator voltages frequencies lines'))):
     def __hash__(self):
         return hash(self.station_id)
 
@@ -53,7 +53,7 @@ class Station(recordclass('Station', b'station_id lat lon name operator voltages
         return 'SRID=4326;POINT({0} {1})'.format(self.lon, self.lat)
 
 
-class Line(recordclass('Line', b'line_id operator left right length frequencies voltages resistance reactance capacitance max_current')):
+class Line(recordclass('Line', str('line_id operator left right length frequencies voltages resistance reactance capacitance max_current'))):
     def __hash__(self):
         return hash(self.line_id)
 
