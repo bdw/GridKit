@@ -111,6 +111,3 @@ delete from topology_edges where line_id in (select unnest(source_id) from joint
 
 
 commit;
-vacuum analyze topology_edges;
-vacuum analyze topology_nodes;
-vacuum analyze osm_objects;
