@@ -132,6 +132,6 @@ enable analysis of the results. Notably:
   'patching' of the network to propagate voltage and frequency
   information from neighbors.
 * `util/load_polyfile.py` transforms a set of `poly` files into import
-  statements for PostgreSQL, to allow (among other things) data
-  statistics per area, among other things.
+  statements for PostgreSQL, to allow data statistics per area, among
+  other things.
   
