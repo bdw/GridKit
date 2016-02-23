@@ -89,7 +89,7 @@ You should expect this, depending on your machine and the size of your
 dataset, to take anywhere from 5 minutes to a few hours. Afterwards,
 you can extract a copy of the network using:
 
-    ./psql -f export-topology.sql
+    psql -f export-topology.sql
     
 Which will copy the network to a set of CSV files in `/tmp`:
 
