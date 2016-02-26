@@ -17,6 +17,12 @@ then
     fi
 fi
 
+if [ -n "$PGPORT" ]
+then
+    # osm2pgsql needs an explicit --port parameter
+    OSM2PGSQL_FLAGS=--port=$PGPORT
+fi
+
 dropdb --if-exists $PGDATABASE || exit 1
 createdb $PGDATABASE || exit 1
 psql -c 'CREATE EXTENSION postgis;' || exit 1
@@ -24,7 +30,7 @@ psql -c 'CREATE EXTENSION hstore;' || exit 1
 
 osm2pgsql -d $PGDATABASE -c -k -s \
 	-S ./power.style \
+	$OSM2PGSQL_FLAGS \
 	$OSM_DATAFILE || exit 1
-
 time psql -f ./prepare-tables.sql
 
