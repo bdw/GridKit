@@ -32,22 +32,13 @@ class Station(recordclass('Station', str('station_id lat lon name operator volta
     def distance(self, other):
         # See https://www.math.ksu.edu/~dbski/writings/haversine.pdf
         # earths radius will be 6.371 km
-        radius  = 6.371 * 1000 * 1000
-        # first calculate on unit circle
-        theta_1 = math.radians(self.lat)
-        phi_1   = math.radians(self.lon)
-        theta_2 = math.radians(other.lat)
-        phi_2   = math.radians(other.lon)
-        x_1     = math.cos(theta_1) * math.cos(phi_1)
-        y_1     = math.cos(theta_1) * math.sin(phi_1)
-        z_1     = math.sin(phi_1)
-        x_2     = math.cos(theta_2) * math.cos(phi_2)
-        y_2     = math.cos(theta_2) * math.sin(phi_2)
-        z_2     = math.sin(phi_2)
-        direct  = math.sqrt((x_1-x_2)**2 + (y_1-y_2)**2 + (z_1-z_2)**2)
-        angle   = math.asin( (direct / 2) * math.sqrt(4 - direct**2))
-        # the error here is quite considerable, but in the right ballpark
-        return  radius * angle
+        R  = 6372.8
+        delta_lat = math.radians(other.lat - self.lat)
+        delta_lon = math.radians(other.lon - self.lon)
+        a = math.sin(delta_lat/2)**2 + math.cos(math.radians(self.lat))*math.cos(math.radians(other.lat))*math.sin(delta_lon/2)**2
+        c = 2*math.asin(math.sqrt(a))
+        return R*c
+
 
     def to_ewkt(self):
         return 'SRID=4326;POINT({0} {1})'.format(self.lon, self.lat)

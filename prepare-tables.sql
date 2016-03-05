@@ -140,17 +140,17 @@ $$ language plpgsql;
 
 
 create table node_geometry (
-    node_id bigint,
+    node_id bigint primary key,
     point   geometry(point, 3857)
 );
 
 create table way_geometry (
-    way_id bigint,
+    way_id bigint primary key,
     line   geometry(linestring, 3857)
 );
 
 create table osm_tags (
-    osm_id varchar(64),
+    osm_id varchar(64), -- todo use system id for this
     tags   hstore,
     primary key (osm_id)
 );
