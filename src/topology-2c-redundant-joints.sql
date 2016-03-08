@@ -36,7 +36,7 @@ create table joint_merged_edges (
 
 create table joint_cyclic_edges (
     extent     geometry(linestring, 3857),
-    line_id    varchar(64) array,
+    line_id    varchar(64) array
 );
 
 create index joint_merged_edges_source_id on joint_merged_edges using gin(source_id);
