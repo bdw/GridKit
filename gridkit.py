@@ -87,7 +87,7 @@ class PsqlWrapper(object):
             k = 'PG' + n.upper()
             os.environ[k] = v
 
-    def do_createdb(database_name):
+    def do_createdb(self, database_name):
         self.do_query('CREATE DATABASE {0}'.format(database_name))
 
     def do_query(self, query):
@@ -106,10 +106,14 @@ class PsqlWrapper(object):
         except OSError as e:
             raise Exception(e)
 
-    def do_getcsv(self, subquery_or_table):
+    def do_getcsv(self, subquery_or_table, io_handle):
         query = make_copy_query(subquery_or_table)
         try:
-            return subprocess.check_output([PSQL, '-v', 'ON_ERROR_STOP=1', '-c', query]).decode('utf-8')
+            command = [PSQL, '-v', 'ON_ERROR_STOP=1', '-c', query]
+            try:
+                subprocess.check_call(command, stdout=io_handle)
+            except io.UnsupportedOperation as e:
+                io_handle.write(subprocess.check_output(command).decode('utf-8'))
         except subprocess.SubprocessError as e:
             raise QueryError(e, subquery_or_table)
         except OSError as e:
@@ -156,12 +160,11 @@ class Psycopg2Wrapper(object):
             query = handle.read()
         self.do_query(query)
 
-    def do_getcsv(self, subquery_or_table):
-        handle = io.StringIO()
+    def do_getcsv(self, subquery_or_table, io_handle):
         query  = make_copy_query(subquery_or_table)
         try:
             with self._connection.cursor() as cursor:
-                cursor.copy_expert(query, handle)
+                cursor.copy_expert(query, io_handle)
             return handle.getvalue()
         except psycopg2.Error as e:
             raise QueryError(e, query)
@@ -216,8 +219,11 @@ def ask_db_params(pg_client, database_params):
     database_params.update(**new_params)
 
 def setup_database(pg_client, database_name, interactive):
-    db_csv = pg_client.do_getcsv('SELECT datname FROM pg_database')
-    databases = list(map(operator.itemgetter(0), csv.reader(io.StringIO(db_csv))))
+    io_handle = io.StringIO()
+    pg_client.do_getcsv('SELECT datname FROM pg_database', io_handle)
+    io_handle.seek(0,0)
+    databases = list(map(operator.itemgetter(0), csv.reader(io_handle)))
+
     while interactive and database_name in databases:
         overwrite = ask("Database {0} exists. Overwrite [y/N]?".format(database_name),
                         type=lambda s: s.lower().startswith('y'))
@@ -291,10 +297,34 @@ def do_conversion(pg_client, voltage_cutoff=220000):
     logging.info("Topological algorithms done")
 
 
-def export_network_csv(pg_client):
-    pass
+def export_network_csv(pg_client, full_export=False):
+    logging.info("Running export")
+    if full_export:
+        with io.open('all-vertices.csv', 'w') as handle:
+            pg_client.do_getcsv("select v_id, lon, lat, typ, voltage, frequency, "
+                                "name, operator, ref, wkt_srid_4326 "
+                                "from heuristic_vertices", handle
+            )
 
-parse_pair = lambda s: tuple(s.split('=', 1))
+        with io.open('all-links.csv', 'w') as handle:
+            pg_client.do_getcsv("select l_id, v_id_1, v_id_2, voltage, cables,"
+                                " wires, frequency, name, operator, ref, length_m, "
+                                " r_ohmkm, x_ohmkm, c_nfkm, i_th_max_a, "
+                                " from_relation, wkt_srid_4326 from heuristic_links", handle)
+
+    with io.open('highvoltage-vertices.csv', 'w') as handle:
+        pg_client.do_getcsv("select v_id, lon, lat, typ, voltage, frequency, "
+                            "name, operator, ref, wkt_srid_4326 "
+                            "from heuristic_vertices_highvoltage", handle
+        )
+    with io.open('highvoltage-links.csv', 'w') as handle:
+        pg_client.do_getcsv("select l_id, v_id_1, v_id_2, voltage, cables, wires, frequency, name,"
+                            " operator, ref, length_m, r_ohmkm, x_ohmkm, c_nfkm, i_th_max_a, "
+                            " from_relation, wkt_srid_4326 from heuristic_links_highvoltage", handle)
+    logging.info("Export done")
+
+
+
 
 if __name__ == '__main__':
     logging.basicConfig(format='%(levelname)s [%(asctime)s] / %(message)s', level=logging.INFO)
@@ -311,17 +341,20 @@ if __name__ == '__main__':
         logging.error("Can't load psycopg2 or find psql executable")
         quit(1)
 
-
+    parse_pair = lambda s: tuple(s.split('=', 1))
     ap = argparse.ArgumentParser()
     # polygon filter files
     ap.add_argument('--filter', action='store_true', help='Filter input file for power data (requires osmfilter)')
     ap.add_argument('--poly',type=str,nargs='+', help='Polygon file(s) to limit the areas of the input file (requires osmconvert)')
     ap.add_argument('--no-interactive', action='store_false', dest='interactive', help='Proceed automatically without asking questions')
     ap.add_argument('--no-import', action='store_false', dest='_import', help='Skip import step')
+    ap.add_argument('--no-conversion', action='store_false', dest='convert', help='Skip conversion step')
+    ap.add_argument('--no-export', action='store_false', dest='export', help='Skip export step')
     ap.add_argument('--pg', type=parse_pair, default=[], nargs='+', help='Connection arguments to PostgreSQL, eg. --pg user=gridkit database=europe')
     ap.add_argument('--psql', type=str, help='Location of psql binary', default=PSQL)
     ap.add_argument('--osm2pgsql', type=str, help='Location of osm2pgsql binary', default=OSM2PGSQL)
     ap.add_argument('--voltage', type=int, help='High-voltage cutoff level', default=220000)
+    ap.add_argument('--full-export', action='store_true', dest='full_export')
     ap.add_argument('osmfile', nargs='?')
     args = ap.parse_args()
 
@@ -405,8 +438,11 @@ if __name__ == '__main__':
             database_name = setup_database(pg_client, database_name, interactive)
             db_params.update(database=database_name)
             do_import(osmfile, db_params)
-        try:
-            do_conversion(pg_client)
-        except KeyboardInterrupt:
-            logging.warn("Execution interrupted - process is not finished")
-            quit(1)
+        if args.convert:
+            try:
+                do_conversion(pg_client, args.voltage)
+            except KeyboardInterrupt:
+                logging.warn("Execution interrupted - process is not finished")
+                quit(1)
+        if args.export:
+            export_network_csv(pg_client, args.full_export)

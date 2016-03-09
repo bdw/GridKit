@@ -53,7 +53,7 @@ create index heuristic_links_osm_id on heuristic_links (osm_id);
 insert into heuristic_vertices (lon, lat, typ, voltage, frequency, name, operator, ref, wkt_srid_4326, osm_id, osm_objects, location)
     select ST_X(ST_Transform(station_location, 4326)), 
            ST_Y(ST_Transform(station_location, 4326)),
-           e.power_name,
+           n.topology_name,
            array_to_string(e.voltage, ';'),
            array_to_string(e.frequency, ';'),
            e.name,
