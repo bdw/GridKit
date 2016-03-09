@@ -171,8 +171,7 @@ create table power_type_names (
 create table relation_member (
     relation_id bigint,
     member_id   varchar(64) not null,
-    member_role varchar(64) null,
-    foreign key (relation_id) references planet_osm_rels (id)
+    member_role varchar(64) null
 );
 
 create table electrical_properties (
@@ -303,6 +302,3 @@ create index osm_objects_objects  on osm_objects   using gin(objects);
 create sequence synthetic_objects start 1;
 
 commit;
--- this is an optimization,
-vacuum analyze power_line;
-vacuum analyze power_station;

@@ -67,5 +67,3 @@ insert into dangling_lines (line_id, extent)
 
 
 commit;
-vacuum analyze topology_edges;
-vacuum analyze topology_nodes;

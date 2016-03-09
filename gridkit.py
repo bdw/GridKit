@@ -1,20 +1,27 @@
 #!/usr/bin/env python
-"""
-GridKit is a power grid extraction toolkit.
+"""GridKit is a power grid extraction toolkit.
 
 Usage:
     python gridkit.py path/to/data-file.osm --filter \\
          --poly path/to/area.poly \\
          --pg user=gridkit database=gridkit
-"""
 
+GridKit will create a database, import the power data, run the
+extraction procedures, and write CSV's with the high-voltage network
+extract.
+"""
 from __future__ import print_function, unicode_literals, division
-import os, sys, io, argparse, logging, subprocess, functools
+import os, sys, io, csv, argparse, logging, subprocess, functools, getpass, operator
 try:
     import psycopg2
+    import psycopg2.extensions
 except ImportError:
     psycopg2 = False
+
 __author__ = 'Bart Wiegmans'
+
+if sys.version_info >= (3,0):
+    raw_input = input
 
 
 def which(program):
@@ -57,7 +64,7 @@ class QueryError(Exception):
         super(QueryError, self).__init__(error)
         self.query = query
 
-def make_copy_query(subquery_or_stable):
+def make_copy_query(subquery_or_table):
     if subquery_or_table.lower().startswith('select'):
         query = 'COPY ({0}) TO STDOUT WITH CSV HEADER'
     else:
@@ -80,6 +87,9 @@ class PsqlWrapper(object):
             k = 'PG' + n.upper()
             os.environ[k] = v
 
+    def do_createdb(database_name):
+        self.do_query('CREATE DATABASE {0}'.format(database_name))
+
     def do_query(self, query):
         try:
             subprocess.check_call([PSQL, '-v', 'ON_ERROR_STOP=1', '-c', query])
@@ -97,7 +107,7 @@ class PsqlWrapper(object):
             raise Exception(e)
 
     def do_getcsv(self, subquery_or_table):
-        query = _make_copy_query(subquery_or_table)
+        query = make_copy_query(subquery_or_table)
         try:
             return subprocess.check_output([PSQL, '-v', 'ON_ERROR_STOP=1', '-c', query]).decode('utf-8')
         except subprocess.SubprocessError as e:
@@ -112,7 +122,7 @@ class Psycopg2Wrapper(object):
         self._connection = None
         self._params     = dict()
 
-    def update_connection(self, params):
+    def update_params(self, params):
         if self._connection is not None:
             # close existing connection
             if not self._connection.closed:
@@ -123,31 +133,32 @@ class Psycopg2Wrapper(object):
     def check_connection(self):
         try:
             if self._connection is None:
-                self._connection = psycopg2.connect(**self.params)
-        except psycopg2.Error as e:
+                self._connection = psycopg2.connect(**self._params)
+        except (TypeError, psycopg2.Error) as e:
             return False
         else:
             return True
 
+    def do_createdb(self, database_name):
+        self._connection.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_AUTOCOMMIT)
+        self.do_query('CREATE DATABASE {0};'.format(database_name))
+
     def do_query(self, query):
         try:
-            with self._connection.cursor() as cursor:
-                cursor.execute(query)
+            with self._connection as con:
+                with con.cursor() as cursor:
+                    cursor.execute(query)
         except psycopg2.Error as e:
             raise QueryError(e, query)
 
-    def do_queryfile(queryfile):
+    def do_queryfile(self, queryfile):
         with io.open(queryfile, 'r', encoding='utf-8') as handle:
             query = handle.read()
-        try:
-            with self._connection.cursor() as cursor:
-                cursor.execute(query)
-        except psycopg2.Error as e:
-            raise QueryError(e, query)
+        self.do_query(query)
 
-    def do_getcsv(subquery_or_table):
+    def do_getcsv(self, subquery_or_table):
         handle = io.StringIO()
-        query  = _make_copy_query(subquery_or_table)
+        query  = make_copy_query(subquery_or_table)
         try:
             with self._connection.cursor() as cursor:
                 cursor.copy_expert(query, handle)
@@ -160,28 +171,98 @@ class Psycopg2Wrapper(object):
 
 class PgWrapper(Psycopg2Wrapper if psycopg2 else PsqlWrapper):
     '''
-Wrap interfaces of both psycopg2 and psql-under-subprocess
+Wrap interfaces of either psycopg2 or psql-under-subprocess
 Which of these is actually implemented depends on the runtime
 environment; psycopg2 is given preference, but psql is a fallback.
 '''
     pass
 
-def setup_database(pg_client, database_name):
-    pass
+def ask(question, default=None, type=str):
+    if default is not None:
+        question = "{0} [{1}]".format(question, default)
+    try:
+        value = raw_input(question + ' ')
+    except KeyboardInterrupt:
+        print('')
+        quit(1)
+    if not value:
+        return default
+    try:
+        return type(value)
+    except ValueError:
+        return None
 
-def do_import(pg_client, database_params, osm_data_file):
+def ask_db_params(pg_client, database_params):
+    while not pg_client.check_connection():
+        print("Please provide the PostgreSQL connection parameters (leave empty to exit)")
+        user = ask("PostgreSQL user name:", default=getpass.getuser())
+        host = ask("PostgreSQL hostname:", default='localhost')
+        port = ask("PostgreSQL port number:", type=int, default=5432)
+        dbnm = ask("PostgreSQL database:", type=str, default=user)
+        new_params = database_params.copy()
+        if user is not None:
+            new_params.update(user=user)
+        if host is not None:
+            new_params.update(host=host)
+        if port is not None:
+            new_params.update(port=port)
+        if dbnm is not None:
+            new_params.update(database=dbnm)
+        if all(f is None for f in (user, host, port, dbnm)):
+            print("No values provided, exiting")
+            quit(0)
+        pg_client.update_params(new_params)
+    print("Connection succesful")
+    database_params.update(**new_params)
+
+def setup_database(pg_client, database_name, interactive):
+    db_csv = pg_client.do_getcsv('SELECT datname FROM pg_database')
+    databases = list(map(operator.itemgetter(0), csv.reader(io.StringIO(db_csv))))
+    while interactive and database_name in databases:
+        overwrite = ask("Database {0} exists. Overwrite [y/N]?".format(database_name),
+                        type=lambda s: s.lower().startswith('y'))
+        if overwrite:
+           break
+        database_name = ask("Database name:", default='gridkit')
+    if not database_name in databases:
+        pg_client.do_createdb(database_name)
+    pg_client.update_params({'database': database_name})
+    pg_client.check_connection()
+    pg_client.do_query('CREATE EXTENSION IF NOT EXISTS hstore;')
+    pg_client.do_query('CREATE EXTENSION IF NOT EXISTS postgis;')
+    print("Database", database_name, "set up")
+    return database_name
+
+def do_import(osm_data_file, database_params):
     if 'password' in database_params:
         os.environ['PGPASS'] = database_params['password']
+    command_line = [OSM2PGSQL, '-d', database_params['database'],
+                    '-c', '-k', '-s', '-S', POWERSTYLE]
+    if 'port' in database_params:
+        command_line.extend(['-P', str(database_params['port'])])
+    if 'user' in database_params:
+        command_line.extend(['-U', database_params['user']])
+    if 'host' in database_params:
+        command_line.extend(['-H', database_params['host']])
+    command_line.append(osm_data_file)
+    logging.info("Calling %s", ' '.join(command_line))
+    subprocess.check_call(command_line)
 
 def do_conversion(pg_client, voltage_cutoff=220000):
     f = functools.partial(os.path.join, BASE_DIR, 'src')
-    # shared node algorithms
+    # preparing tables
+    logging.info("Preparing tables")
+    pg_client.do_queryfile(f('prepare-tables.sql'))
 
+    # shared node algorithms
+    logging.info("Shared-node algorithms running")
     pg_client.do_queryfile(f('node-1-find-shared.sql'))
     pg_client.do_queryfile(f('node-2-merge-lines.sql'))
     pg_client.do_queryfile(f('node-3-line-joints.sql'))
+    logging.info("Shared-node algorithms finished")
 
     # spatial algorithms
+    logging.info("Spatial algorithms running")
     pg_client.do_queryfile(f('spatial-1-merge-stations.sql'))
     pg_client.do_queryfile(f('spatial-2-eliminate-internal-lines.sql'))
     pg_client.do_queryfile(f('spatial-3-eliminate-line-overlap.sql'))
@@ -190,8 +271,10 @@ def do_conversion(pg_client, voltage_cutoff=220000):
     pg_client.do_queryfile(f('spatial-5b-mutual-terminal-intersections.sql'))
     pg_client.do_queryfile(f('spatial-5c-joint-stations.sql'))
     pg_client.do_queryfile(f('spatial-6-merge-lines.sql'))
+    logging.info("Spatial algorithms finished")
 
     # topological algoritms
+    logging.info("Topological algorithms running")
     pg_client.do_queryfile(f('topology-1-connections.sql'))
     pg_client.do_queryfile(f('topology-2a-dangling-joints.sql'))
     pg_client.do_queryfile(f('topology-2b-redundant-splits.sql'))
@@ -202,17 +285,18 @@ def do_conversion(pg_client, voltage_cutoff=220000):
     with io.open(f('topology-4-high-voltage-network.sql'), 'r') as handle:
         query_text = handle.read().replace('220000', str(voltage_cutoff))
         pg_client.do_query(query_text)
+
     pg_client.do_queryfile(f('topology-4-high-voltage-network.sql'))
     pg_client.do_queryfile(f('topology-5-abstraction.sql'))
+    logging.info("Topological algorithms done")
 
 
 def export_network_csv(pg_client):
     pass
 
-
 parse_pair = lambda s: tuple(s.split('=', 1))
-if __name__ == '__main__':
 
+if __name__ == '__main__':
     logging.basicConfig(format='%(levelname)s [%(asctime)s] / %(message)s', level=logging.INFO)
 
     PSQL       = which('psql')
@@ -221,33 +305,35 @@ if __name__ == '__main__':
     OSMFILTER  = which('osmfilter')
     OSMOSIS    = which('osmosis')
     BASE_DIR   = os.path.realpath(os.path.dirname(__file__))
+    POWERSTYLE = os.path.join(BASE_DIR, 'power.style')
 
     if not psycopg2 and PSQL is None:
         logging.error("Can't load psycopg2 or find psql executable")
         quit(1)
 
 
-    _ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser()
     # polygon filter files
-    _ap.add_argument('--filter', action='store_true', help='Filter input file for power data (requires osmfilter)')
-    _ap.add_argument('--poly',type=str,nargs='+', help='Polygon file(s) to limit the areas of the input file (requires osmconvert)')
-    _ap.add_argument('--pg', type=parse_pair, default=[], nargs='+', help='Connection arguments to PostgreSQL, eg. --pg user=gridkit database=europe')
-    _ap.add_argument('--psql', type=str, help='Location of psql binary', default=PSQL)
-    _ap.add_argument('--osm2pgsql', type=str, help='Location of osm2pgsql binary', default=OSM2PGSQL)
-    _ap.add_argument('--voltage', type=int, help='High-voltage cutoff level', default=220000)
-    _ap.add_argument('osmfile')
-    _args = _ap.parse_args()
+    ap.add_argument('--filter', action='store_true', help='Filter input file for power data (requires osmfilter)')
+    ap.add_argument('--poly',type=str,nargs='+', help='Polygon file(s) to limit the areas of the input file (requires osmconvert)')
+    ap.add_argument('--no-interactive', action='store_false', dest='interactive', help='Proceed automatically without asking questions')
+    ap.add_argument('--no-import', action='store_false', dest='_import', help='Skip import step')
+    ap.add_argument('--pg', type=parse_pair, default=[], nargs='+', help='Connection arguments to PostgreSQL, eg. --pg user=gridkit database=europe')
+    ap.add_argument('--psql', type=str, help='Location of psql binary', default=PSQL)
+    ap.add_argument('--osm2pgsql', type=str, help='Location of osm2pgsql binary', default=OSM2PGSQL)
+    ap.add_argument('--voltage', type=int, help='High-voltage cutoff level', default=220000)
+    ap.add_argument('osmfile', nargs='?')
+    args = ap.parse_args()
 
     # i've added this for the scigrid folks
-    PSQL      = _args.psql
-    OSM2PGSQL = _args.osm2pgsql
-    osmfile   = _args.osmfile
+    PSQL        = args.psql
+    OSM2PGSQL   = args.osm2pgsql
+    osmfile     = args.osmfile
+    interactive = args.interactive and os.isatty(sys.stdin.fileno())
+    if args._import and args.osmfile is None:
+        ap.error("OSM source file required")
 
-    if OSM2PGSQL is None or not (os.path.isfile(OSM2PGSQL) and os.access(OSM2PGSQL, os.X_OK)):
-        logging.error("Cannot find osm2pgsql executable")
-        quit(1)
-
-    if _args.filter:
+    if args.filter:
         if not OSMFILTER:
             logging.error("Cannot find osmfilter executable, necessary for --filter")
             quit(1)
@@ -257,9 +343,53 @@ if __name__ == '__main__':
         subprocess.check_call([OSMFILTER, osmfile, '--keep="power=*"', '-o=' + new_name])
         osmfile  = new_name
 
-    if _args.poly:
+    # TODO database naming scheme.
+
+    # IF no-polyfiles
+    #   IF have database-argument
+    #      THEN use database-argument
+    #      ELSE use data-filename
+    #   END IF
+    # ELSE IF single-polyfile
+    #   IF have database-argument
+    #      THEN use database-argument
+    #      ELSE use poly-filename
+    #   END IF
+    # ELSE -- many polyfiles
+    #   FOR EACH polyfile
+    #     IF have database-argument
+    #       THEN use database-argument as template
+    #       ELSE use 'gridkit' as template
+    #     END IF
+    #     use template with polyfile name
+    #   END FOR
+    # END IF
+
+    # get effective database parameters
+    db_params = dict((k[2:].lower(), v) for k, v in os.environ.items() if k.startswith('PG'))
+    db_params.update(**dict(args.pg))
+
+    pg_client = PgWrapper()
+    pg_client.update_params(db_params)
+
+    if pg_client.check_connection():
+        logging.info("Connection OK")
+    elif interactive:
+        logging.warn("Cannot connect to database")
+        ask_db_params(pg_client, db_params)
+    else:
+        logging.error("Cannot connect to database")
+        quit(1)
+
+
+    if OSM2PGSQL is None or not (os.path.isfile(OSM2PGSQL) and os.access(OSM2PGSQL, os.X_OK)):
+        logging.error("Cannot find osm2pgsql executable")
+        quit(1)
+
+
+    if args.poly:
         osmfile_list = list()
-        for polyfile in _args.poly:
+        for polyfile in args.poly:
             if not os.path.isfile(polyfile):
                 logging.warn("%s is not a file", polyfile)
                 continue
@@ -270,4 +400,13 @@ if __name__ == '__main__':
             subprocess.check_call([OSMCONVERT, osmfile, '--complete-ways', '-B='+polyfile, '-o='+osmfile_for_area])
             osmfile_list.append(osmfile_for_area)
     else:
-        setup_database(osmfile)
+        if args._import:
+            database_name = db_params.get('database')
+            database_name = setup_database(pg_client, database_name, interactive)
+            db_params.update(database=database_name)
+            do_import(osmfile, db_params)
+        try:
+            do_conversion(pg_client)
+        except KeyboardInterrupt:
+            logging.warn("Execution interrupted - process is not finished")
+            quit(1)
