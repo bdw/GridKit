@@ -4,8 +4,7 @@
 *.png
 *.dot
 *.pdf
-jit-log.txt
 *.pyc
-.Rdata
-.Rhistory
 __pycache__/
+*.csv
+*.zip

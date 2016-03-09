@@ -161,3 +161,6 @@ enable analysis of the results. Notably:
 * `util/load_polyfile.py` transforms a set of `poly` files into import
   statements for PostgreSQL, to allow data statistics per area, among
   other things.
+
+
+[![DOI](https://zenodo.org/badge/20808/bdw/GridKit.svg)](https://zenodo.org/badge/latestdoi/20808/bdw/GridKit)
