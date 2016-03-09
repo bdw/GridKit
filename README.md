@@ -35,7 +35,7 @@ computations remain managable.
 * PostGIS (2.1 or higher)
 * osm2pgsql (0.88.1 or higher)
 * Optionally psycopg2 (2.6 or higher)
-* Optionally [osm-c-tools](http://github.com/bdw/osm-c-tools)
+* Optionally [osm-c-tools](https://gitlab.com/osm-c-tools/osmctools)
 
 
 ## How to Use (the simple way)
