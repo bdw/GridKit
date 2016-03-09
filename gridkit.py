@@ -239,10 +239,10 @@ def setup_database(pg_client, database_name, interactive):
     print("Database", database_name, "set up")
     return database_name
 
-def do_import(osm_data_file, database_params):
+def do_import(osm_data_file, database_name, database_params):
     if 'password' in database_params:
         os.environ['PGPASS'] = database_params['password']
-    command_line = [OSM2PGSQL, '-d', database_params['database'],
+    command_line = [OSM2PGSQL, '-d', database_name,
                     '-c', '-k', '-s', '-S', POWERSTYLE]
     if 'port' in database_params:
         command_line.extend(['-P', str(database_params['port'])])
@@ -297,27 +297,27 @@ def do_conversion(pg_client, voltage_cutoff=220000):
     logging.info("Topological algorithms done")
 
 
-def export_network_csv(pg_client, full_export=False):
+def export_network_csv(pg_client, full_export=False, base_name='gridkit'):
     logging.info("Running export")
     if full_export:
-        with io.open('all-vertices.csv', 'w') as handle:
+        with io.open(base_name + '-all-vertices.csv', 'w') as handle:
             pg_client.do_getcsv("select v_id, lon, lat, typ, voltage, frequency, "
                                 "name, operator, ref, wkt_srid_4326 "
                                 "from heuristic_vertices", handle
             )
 
-        with io.open('all-links.csv', 'w') as handle:
+        with io.open(base_name + '-all-links.csv', 'w') as handle:
             pg_client.do_getcsv("select l_id, v_id_1, v_id_2, voltage, cables,"
                                 " wires, frequency, name, operator, ref, length_m, "
                                 " r_ohmkm, x_ohmkm, c_nfkm, i_th_max_a, "
                                 " from_relation, wkt_srid_4326 from heuristic_links", handle)
 
-    with io.open('highvoltage-vertices.csv', 'w') as handle:
+    with io.open(base_name + '-highvoltage-vertices.csv', 'w') as handle:
         pg_client.do_getcsv("select v_id, lon, lat, typ, voltage, frequency, "
                             "name, operator, ref, wkt_srid_4326 "
                             "from heuristic_vertices_highvoltage", handle
         )
-    with io.open('highvoltage-links.csv', 'w') as handle:
+    with io.open(base_name + '-highvoltage-links.csv', 'w') as handle:
         pg_client.do_getcsv("select l_id, v_id_1, v_id_2, voltage, cables, wires, frequency, name,"
                             " operator, ref, length_m, r_ohmkm, x_ohmkm, c_nfkm, i_th_max_a, "
                             " from_relation, wkt_srid_4326 from heuristic_links_highvoltage", handle)
@@ -401,13 +401,16 @@ if __name__ == '__main__':
     # get effective database parameters
     db_params = dict((k[2:].lower(), v) for k, v in os.environ.items() if k.startswith('PG'))
     db_params.update(**dict(args.pg))
+    # need multiple databases for postgres
+    if args.poly:
+        db_params.update(database='postgres')
 
     pg_client = PgWrapper()
     pg_client.update_params(db_params)
 
     if pg_client.check_connection():
         logging.info("Connection OK")
-    elif interactive:
+    elif interactive and not args.poly:
         logging.warn("Cannot connect to database")
         ask_db_params(pg_client, db_params)
     else:
@@ -421,7 +424,7 @@ if __name__ == '__main__':
 
 
     if args.poly:
-        osmfile_list = list()
+        osmfiles = dict()
         for polyfile in args.poly:
             if not os.path.isfile(polyfile):
                 logging.warn("%s is not a file", polyfile)
@@ -431,13 +434,22 @@ if __name__ == '__main__':
             osmfile_for_area = '{0}-{1}.o5m'.format(osmfile_name, polygon_name)
             logging.info("Extracting area %s from %s to make %s", polygon_name, osmfile, osmfile_for_area)
             subprocess.check_call([OSMCONVERT, osmfile, '--complete-ways', '-B='+polyfile, '-o='+osmfile_for_area])
-            osmfile_list.append(osmfile_for_area)
+            osmfiles[polygon_name] = osmfile_for_area
+
+        for area_name, area_osmfile in osmfiles.items():
+            database_name = 'gridkit_' + area_name
+            # select 'postgres' database for creating other databases
+            pg_client.update_params({'database':'postgres'})
+            setup_database(pg_client, database_name, False)
+            do_import(area_osmfile, database_name, db_params)
+            do_conversion(pg_client, args.voltage)
+            export_network_csv(pg_client, args.full_export, database_name)
+
     else:
+        database_name = db_params.get('database')
         if args._import:
-            database_name = db_params.get('database')
             database_name = setup_database(pg_client, database_name, interactive)
-            db_params.update(database=database_name)
-            do_import(osmfile, db_params)
+            do_import(osmfile, database_name, db_params)
         if args.convert:
             try:
                 do_conversion(pg_client, args.voltage)
@@ -445,4 +457,4 @@ if __name__ == '__main__':
                 logging.warn("Execution interrupted - process is not finished")
                 quit(1)
         if args.export:
-            export_network_csv(pg_client, args.full_export)
+            export_network_csv(pg_client, args.full_export, database_name or 'gridkit')
