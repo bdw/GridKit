@@ -28,24 +28,51 @@ Of note, PyPSA implements several methods of network simplification,
 which is in many cases essential for ensuring that the power flow
 computations remain managable.
 
+## Requirements
 
-## How to Use
+* Python (2.7 or higher)
+* PostgreSQL (9.4 or higher)
+* PostGIS (2.1 or higher)
+* osm2pgsql (0.88.1 or higher)
+* Optionally psycopg2 (2.6 or higher)
+* Optionally [osm-c-tools](http://github.com/bdw/osm-c-tools)
 
-This software has been developed and tested on linux using PostgreSQL
-9.4, PostGIS 2.1 and osm2pgsql version 0.88.1. PostgreSQL should also
-support the *hstore* extension to allow the manipulation of tags, and
-the *plpgsql* language should not be disabled. Some familiarity with
-OpenStreetMap is preferable. Source datafiles can be acquired from
-[planet.openstreetmap.org](http://planet.openstreetmap.org/pbf/) or
-[geofabrik](http://download.geofabrik.de/). In many cases the latter
-is preferable due to a much smaller size.
 
-Extracting the power information from this source file is not strictly
-necessary, but probably very helpful in ensuring that the running time
-of the procedures remains reasonable. The use of
-[osm-c-tools](https://github.com/bdw/osm-c-tools/) is recommended,
-although [osmosis](http://wiki.openstreetmap.org/wiki/Osmosis) also
-works.
+## How to Use (the simple way)
+
+Download a power extract from enipedia:
+
+    wget http://enipedia.tudelft.nl/OpenStreetMap/EuropePower.zip
+    unzip EuropePower.zip
+
+Ensure you have a user for postgresql with permissions to create
+databases and modify schemas. For example:
+
+    createuser -d gridkit
+
+Run `gridkit.py`:
+
+    python gridkit.py EuropePower.osm
+
+The `--pg` option takes a series of key=value pairs, which are parsed
+into database connection options. For example to connect to a host on
+`10.0.0.160` listening on port 9000:
+
+    python gridkit.py --pg host=10.0.0.160 port=9000 EuropePower.osm
+
+The files `gridkit-highvoltage-vertices.csv` contains a CSV file with
+all high-voltage stations, and `gridkit-highvoltage-edges.csv`
+contains a CSV file with all high-voltage lines. You may use
+`--full-export` to export all other lines, too.
+
+## How to Use (the hard way)
+
+Download a full-planet dump from
+[planet.openstreetmap.org](http://planet.openstreetmap.org/pbf/) or a
+geographically-bounded extract from
+[geofabrik](http://download.geofabrik.de/).
+
+Extract the power information
 
     osmconvert my_area.osm.pbf -o=my_area.o5m
     osmfilter my_area.o5m --keep='power=*' -o=my_area_power.o5m
@@ -76,10 +103,10 @@ For more information, check out the linked documentation.
 
 ### Extraction process
 
-Data imports are facilitated using:
+Import data using the script:
 
     ./import-data.sh /path/to/data.o5m database_name
-    
+
 The `database_name` parameter is optional if the `PGDATABASE`
 environment variable has been set. Running the extraction process is just:
 
@@ -90,7 +117,7 @@ dataset, to take anywhere from 5 minutes to a few hours. Afterwards,
 you can extract a copy of the network using:
 
     psql -f export-topology.sql
-    
+
 Which will copy the network to a set of CSV files in `/tmp`:
 
 * `/tmp/heuristic_vertices.csv` and `/tmp/heuristic_links.csv` contain
@@ -134,4 +161,3 @@ enable analysis of the results. Notably:
 * `util/load_polyfile.py` transforms a set of `poly` files into import
   statements for PostgreSQL, to allow data statistics per area, among
   other things.
-  
