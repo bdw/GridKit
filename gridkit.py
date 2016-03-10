@@ -11,7 +11,8 @@ extraction procedures, and write CSV's with the high-voltage network
 extract.
 """
 from __future__ import print_function, unicode_literals, division
-import os, sys, io, csv, argparse, logging, subprocess, functools, getpass, operator
+import os, sys, io, re, csv, argparse, logging, subprocess, functools, getpass, operator
+
 try:
     import psycopg2
     import psycopg2.extensions
@@ -165,7 +166,6 @@ class Psycopg2Wrapper(object):
         try:
             with self._connection.cursor() as cursor:
                 cursor.copy_expert(query, io_handle)
-            return handle.getvalue()
         except psycopg2.Error as e:
             raise QueryError(e, query)
 
@@ -323,7 +323,9 @@ def export_network_csv(pg_client, full_export=False, base_name='gridkit'):
                             " from_relation, wkt_srid_4326 from heuristic_links_highvoltage", handle)
     logging.info("Export done")
 
-
+def file_age_cmp(a, b):
+    # negative if a is younger than b, positive if a is older than b
+    return os.path.getmtime(b) - os.path.getmtime(a)
 
 
 if __name__ == '__main__':
@@ -432,15 +434,21 @@ if __name__ == '__main__':
             polygon_name, ext = os.path.splitext(os.path.basename(polyfile))
             osmfile_name, ext = os.path.splitext(osmfile)
             osmfile_for_area = '{0}-{1}.o5m'.format(osmfile_name, polygon_name)
-            logging.info("Extracting area %s from %s to make %s", polygon_name, osmfile, osmfile_for_area)
-            subprocess.check_call([OSMCONVERT, osmfile, '--complete-ways', '-B='+polyfile, '-o='+osmfile_for_area])
+            if os.path.isfile(osmfile_for_area) and file_age_cmp(osmfile_for_area, osmfile) < 0:
+                logging.info("File %s already exists and is newer than %s", osmfile_for_area, osmfile)
+            else:
+                logging.info("Extracting area %s from %s to make %s", polygon_name, osmfile, osmfile_for_area)
+                subprocess.check_call([OSMCONVERT, osmfile, '--complete-ways', '-B='+polyfile, '-o='+osmfile_for_area])
             osmfiles[polygon_name] = osmfile_for_area
 
         for area_name, area_osmfile in osmfiles.items():
-            database_name = 'gridkit_' + area_name
+            # cleanup the name for use as a database name
+            database_name = 'gridkit_' + re.sub('[^A-Z0-9]+', '_', area_name, 0, re.I)
             # select 'postgres' database for creating other databases
             pg_client.update_params({'database':'postgres'})
+            pg_client.check_connection()
             setup_database(pg_client, database_name, False)
+            # setup-database automatically uses the right connection
             do_import(area_osmfile, database_name, db_params)
             do_conversion(pg_client, args.voltage)
             export_network_csv(pg_client, args.full_export, database_name)
