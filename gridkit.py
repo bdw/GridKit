@@ -454,7 +454,11 @@ if __name__ == '__main__':
             export_network_csv(pg_client, args.full_export, database_name)
 
     else:
-        database_name = db_params.get('database')
+        database_name = db_params.get('database') or db_params.get('postgres')
+        if database_name is None:
+            # last case fallback
+            osmfile_name, ext = os.path.splitext(os.path.basename(osmfile))
+            database_name = re.sub(r'[^A-Z0-9_]+', '_', osmfile_name.lower(), 0, re.I)
         if args._import:
             database_name = setup_database(pg_client, database_name, interactive)
             do_import(osmfile, database_name, db_params)
