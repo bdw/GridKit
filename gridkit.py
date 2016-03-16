@@ -86,7 +86,7 @@ class PsqlWrapper(object):
     def update_params(self, params):
         for n,v in params.items():
             k = 'PG' + n.upper()
-            os.environ[k] = v
+            os.environ[k] = str(v)
 
     def do_createdb(self, database_name):
         self.do_query('CREATE DATABASE {0}'.format(database_name))
@@ -94,7 +94,7 @@ class PsqlWrapper(object):
     def do_query(self, query):
         try:
             subprocess.check_call([PSQL, '-v', 'ON_ERROR_STOP=1', '-c', query])
-        except subprocess.SubprocessError as e:
+        except subprocess.CalledProcessError as e:
             raise QueryError(e, query)
         except OSError as e:
             raise Exception(e)
@@ -102,7 +102,7 @@ class PsqlWrapper(object):
     def do_queryfile(self, queryfile):
         try:
             subprocess.check_call([PSQL, '-v', 'ON_ERROR_STOP=1', '-f', queryfile])
-        except subprocess.SubprocessError as e:
+        except subprocess.CalledProcessError as e:
             raise QueryError(e, queryfile)
         except OSError as e:
             raise Exception(e)
@@ -115,7 +115,7 @@ class PsqlWrapper(object):
                 subprocess.check_call(command, stdout=io_handle)
             except io.UnsupportedOperation as e:
                 io_handle.write(subprocess.check_output(command).decode('utf-8'))
-        except subprocess.SubprocessError as e:
+        except subprocess.CalledProcessError as e:
             raise QueryError(e, subquery_or_table)
         except OSError as e:
             raise Exception(e)
@@ -197,23 +197,13 @@ def ask(question, default=None, type=str):
 
 def ask_db_params(pg_client, database_params):
     while not pg_client.check_connection():
-        print("Please provide the PostgreSQL connection parameters (leave empty to exit)")
-        user = ask("PostgreSQL user name:", default=getpass.getuser())
-        host = ask("PostgreSQL hostname:", default='localhost')
-        port = ask("PostgreSQL port number:", type=int, default=5432)
-        dbnm = ask("PostgreSQL database:", type=str, default=user)
+        print("Please provide the PostgreSQL connection parameters (press Ctrl+C to exit)")
+        user = ask("PostgreSQL user name:", default=(database_params.get('user') or getpass.getuser()))
+        host = ask("PostgreSQL hostname:", default=(database_params.get('host') or 'localhost'))
+        port = ask("PostgreSQL port number:", type=int, default=(database_params.get('port') or 5432))
+        dbnm = ask("PostgreSQL database:", type=str, default=(database_params.get('database') or user))
         new_params = database_params.copy()
-        if user is not None:
-            new_params.update(user=user)
-        if host is not None:
-            new_params.update(host=host)
-        if port is not None:
-            new_params.update(port=port)
-        if dbnm is not None:
-            new_params.update(database=dbnm)
-        if all(f is None for f in (user, host, port, dbnm)):
-            print("No values provided, exiting")
-            quit(0)
+        new_params.update(user=user, host=host, port=port, database=dbnm)
         pg_client.update_params(new_params)
     print("Connection succesful")
     database_params.update(**new_params)

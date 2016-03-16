@@ -1,3 +1,5 @@
+[![DOI](https://zenodo.org/badge/20808/bdw/GridKit.svg)](https://zenodo.org/badge/latestdoi/20808/bdw/GridKit)
+
 # GridKit is a power grid extraction toolkit
 
 GridKit uses spatial and topological analysis to transform map objects
@@ -27,6 +29,15 @@ require the following:
 Of note, PyPSA implements several methods of network simplification,
 which is in many cases essential for ensuring that the power flow
 computations remain managable.
+
+## Data exports
+
+Data exports created at March 14, 2016 for North America and Europe
+can be downloaded from
+[zenodo](https://zenodo.org/record/47317). These exports are licensed
+under the Open Database License because they derive from OpenStreetMap
+data. They follow the same file structure as [SciGRID](http://scigrid.de/).
+The file `util/network.py` contains a parser for these files.
 
 ## Requirements
 
@@ -163,4 +174,4 @@ enable analysis of the results. Notably:
   other things.
 
 
-[![DOI](https://zenodo.org/badge/20808/bdw/GridKit.svg)](https://zenodo.org/badge/latestdoi/20808/bdw/GridKit)
+
