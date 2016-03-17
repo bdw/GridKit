@@ -4,7 +4,7 @@ drop table if exists joint_extended_line;
 create table line_joints (
     station_id  integer,
     line_id     integer array,
-    terminal_id int[],
+    terminal_id integer array,
     area        geometry(polygon, 3857)
 );
 
