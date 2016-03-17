@@ -3,39 +3,55 @@ drop table if exists line_intersections;
 drop table if exists split_lines;
 
 create table line_intersections (
-    line_id varchar(64),
-    station_id varchar(64) array,
+    line_id    integer primary key,
+    station_id integer array,
     extent geometry(linestring, 3857),
-    areas  geometry(multipolygon, 3857),
-    primary key (line_id)
+    areas  geometry(multipolygon, 3857)
 );
 
 create table split_lines (
-    synth_id varchar(64),
-    source_id varchar(64),
+    new_id integer,
+    old_id integer,
     segment geometry(linestring, 3857)
 );
 
+create table cropped_lines (
+    line_id integer primary key,
+    old_extent geometry(linestring, 3857),
+    new_extent geometry(linestring, 3857)
+);
+
 insert into line_intersections (line_id, station_id, extent, areas)
-    select l.osm_id, array_agg(s.osm_id), l.extent, st_multi(st_union(s.area))
+    select l.line_id, array_agg(s.station_id), l.extent, st_multi(st_union(s.area))
         from power_line l
         join power_station s on st_intersects(l.extent, s.area)
-        group by l.osm_id, l.extent;
+        group by l.line_id, l.extent;
 
-insert into split_lines (synth_id, source_id, segment)
-    select concat('s', nextval('synthetic_objects')), line_id,
-            (st_dump(st_difference(extent, areas))).geom as segment
-        from line_intersections;
+insert into split_lines (new_id, old_id, segment)
+    select nextval('line_id'), line_id, (st_dump(st_difference(extent, areas))).geom
+        from line_intersections
+        where st_numgeometries(st_difference(extent,areas)) > 1;
 
-insert into power_line (osm_id, power_name, extent, terminals)
-    select s.synth_id, l.power_name, s.segment,
+insert into cropped_lines(line_id, old_extent, new_extent)
+     select line_id, extent, st_difference(extent, areas)
+         from line_intersections
+         where st_numgeometries(st_difference(extent, areas)) = 1;
+
+insert into power_line (line_id, power_name, extent, terminals)
+    select s.new_id, l.power_name, s.segment,
            minimal_terminals(s.segment, i.areas, l.terminals)
         from split_lines s
-        join line_intersections i on i.line_id = s.source_id
-        join power_line l on l.osm_id = s.source_id;
+        join line_intersections i on i.line_id = s.old_id
+        join power_line l on l.line_id = s.old_id;
 
-insert into osm_objects (osm_id, objects)
-    select synth_id, source_objects(array[source_id]) from split_lines;
+insert into osm_objects (power_id, power_type, objects)
+    select new_id, 'l', source_objects(array[old_id], 'l') from split_lines;
 
-delete from power_line where osm_id in (select line_id from line_intersections);
+update power_line l set extent = c.new_extent
+     from cropped_lines c where c.line_id = l.line_id;
+
+delete from power_line where line_id in (
+    select old_id from split_lines
+);
+
 commit;
