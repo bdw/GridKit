@@ -13,7 +13,7 @@ drop table if exists osm_tags;
 drop table if exists osm_objects;
 drop sequence if exists line_id;
 drop sequence if exists station_id;
-
+drop function if exists source_objects(integer array, char(1));
 
 create sequence station_id;
 create sequence line_id;
@@ -35,6 +35,9 @@ create table osm_ids (
     power_id integer not null,
     power_type char(1) not null
 );
+-- both ways lookups
+create index osm_ids_osm_idx   on osm_ids (osm_type, osm_id);
+create index osm_ids_power_idx on osm_ids (power_type, power_id);
 
 create table osm_tags (
     osm_name varchar(64) primary key,
@@ -47,6 +50,16 @@ create table osm_objects (
     objects  varchar(64) array not null,
     primary key (power_id, power_type)
 );
+
+
+create function source_objects(pi integer array, pt char(1)) returns varchar(64) array
+as $$
+begin
+    return array(select distinct unnest(objects) from osm_objects o
+                     where pt = o.power_type and o.power_id = any(pi));
+end;
+$$ language plpgsql;
+
 
 /* lookup table for power types */
 create table power_type_names (
@@ -82,12 +95,17 @@ create table power_station (
     area geometry(polygon, 3857)
 );
 
+create index power_station_area on power_station using gist (area);
+
 create table power_line (
     line_id integer primary key,
     power_name varchar(64) not null,
     extent    geometry(linestring, 3857),
     terminals geometry(geometry, 3857)
 );
+
+create index power_line_extent on power_line using gist(extent);
+create index power_line_terminals on power_line using gist(terminals);
 
 
 /* all things recognised as certain stations */

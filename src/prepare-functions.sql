@@ -7,8 +7,8 @@ drop function if exists array_merge(anyarray, anyarray);
 
 drop function if exists buffered_terminals(geometry(linestring));
 drop function if exists buffered_station_point(geometry(point));
+drop function if exists way_station_area(geometry(linestring));
 drop function if exists buffered_station_area(geometry(polygon));
-drop function if exists source_objects(varchar(64) array);
 drop function if exists connect_lines(a geometry(linestring), b geometry(linestring));
 drop function if exists connect_lines_terminals(geometry, geometry);
 drop function if exists reuse_terminal(geometry, geometry, geometry);
