@@ -248,6 +248,7 @@ def do_conversion(pg_client, voltage_cutoff=220000):
     f = functools.partial(os.path.join, BASE_DIR, 'src')
     # preparing tables
     logging.info("Preparing tables")
+    pg_client.do_queryfile(f('prepare-functions.sql'))
     pg_client.do_queryfile(f('prepare-tables.sql'))
 
     # shared node algorithms
@@ -282,36 +283,25 @@ def do_conversion(pg_client, voltage_cutoff=220000):
         query_text = handle.read().replace('220000', str(voltage_cutoff))
         pg_client.do_query(query_text)
 
-    pg_client.do_queryfile(f('topology-4-high-voltage-network.sql'))
     pg_client.do_queryfile(f('topology-5-abstraction.sql'))
     logging.info("Topological algorithms done")
-
 
 def export_network_csv(pg_client, full_export=False, base_name='gridkit'):
     logging.info("Running export")
     if full_export:
         with io.open(base_name + '-all-vertices.csv', 'w') as handle:
-            pg_client.do_getcsv("select v_id, lon, lat, typ, voltage, frequency, "
-                                "name, operator, ref, wkt_srid_4326 "
-                                "from heuristic_vertices", handle
-            )
-
+            pg_client.do_getcsv('heuristic_vertices', handle)
         with io.open(base_name + '-all-links.csv', 'w') as handle:
-            pg_client.do_getcsv("select l_id, v_id_1, v_id_2, voltage, cables,"
-                                " wires, frequency, name, operator, ref, length_m, "
-                                " r_ohmkm, x_ohmkm, c_nfkm, i_th_max_a, "
-                                " from_relation, wkt_srid_4326 from heuristic_links", handle)
+            pg_client.do_getcsv('heuristic_links', handle)
 
     with io.open(base_name + '-highvoltage-vertices.csv', 'w') as handle:
-        pg_client.do_getcsv("select v_id, lon, lat, typ, voltage, frequency, "
-                            "name, operator, ref, wkt_srid_4326 "
-                            "from heuristic_vertices_highvoltage", handle
-        )
+        pg_client.do_getcsv('heuristic_vertices_highvoltage', handle)
+
     with io.open(base_name + '-highvoltage-links.csv', 'w') as handle:
-        pg_client.do_getcsv("select l_id, v_id_1, v_id_2, voltage, cables, wires, frequency, name,"
-                            " operator, ref, length_m, r_ohmkm, x_ohmkm, c_nfkm, i_th_max_a, "
-                            " from_relation, wkt_srid_4326 from heuristic_links_highvoltage", handle)
+        pg_client.do_getcsv('heuristic_links_highvoltage', handle)
+
     logging.info("Export done")
+
 
 def file_age_cmp(a, b):
     # negative if a is younger than b, positive if a is older than b
@@ -368,34 +358,13 @@ if __name__ == '__main__':
         subprocess.check_call([OSMFILTER, osmfile, '--keep="power=*"', '-o=' + new_name])
         osmfile  = new_name
 
-    # TODO database naming scheme.
-
-    # IF no-polyfiles
-    #   IF have database-argument
-    #      THEN use database-argument
-    #      ELSE use data-filename
-    #   END IF
-    # ELSE IF single-polyfile
-    #   IF have database-argument
-    #      THEN use database-argument
-    #      ELSE use poly-filename
-    #   END IF
-    # ELSE -- many polyfiles
-    #   FOR EACH polyfile
-    #     IF have database-argument
-    #       THEN use database-argument as template
-    #       ELSE use 'gridkit' as template
-    #     END IF
-    #     use template with polyfile name
-    #   END FOR
-    # END IF
-
     # get effective database parameters
     db_params = dict((k[2:].lower(), v) for k, v in os.environ.items() if k.startswith('PG'))
     db_params.update(**dict(args.pg))
-    # need multiple databases for postgres
+
+    # need 'root' database for polyfile based extraction
     if args.poly:
-        db_params.update(database='postgres')
+        db_params.update(database=db_params.get('user') or 'postgres')
 
     pg_client = PgWrapper()
     pg_client.update_params(db_params)
