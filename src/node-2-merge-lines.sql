@@ -67,7 +67,7 @@ insert into osm_objects (power_id, power_type, objects)
     select line_id, 'l', array(
         select osm_name from osm_ids i where i.osm_id = any(m.way_id) and i.osm_type = 'w'
     )
-        from node_merged_lines m;
+    from node_merged_lines m;
 
 delete from power_line l where exists (
     select 1 from osm_ids

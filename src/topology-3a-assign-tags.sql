@@ -29,30 +29,38 @@ $$ language plpgsql;
 
 -- assign tags for all newly created objects
 create table derived_tags (
-    osm_id varchar(64) primary key,
-    tags   hstore
+    power_id   integer,
+    power_type char(1),
+    tags       hstore,
+    primary key (power_id, power_type)
 );
 
-insert into derived_tags (osm_id, tags)
-    select o.osm_id, merge_power_tags(array_agg(t.tags))
+insert into derived_tags (power_id, power_type, tags)
+    select o.power_id, o.power_type, merge_power_tags(array_agg(t.tags))
         from osm_objects o
-        join osm_tags t on t.osm_id = any(o.objects)
-                       and o.osm_id != t.osm_id
+        join osm_ids i on i.osm_name = any(o.objects)
+        join osm_tags t on
+                   t.power_id = i.power_id and t.power_type = i.power_type
+          and not (o.power_id = t.power_id and o.power_type = t.power_type)
         where exists (
-            select line_id from topology_edges where o.osm_id = line_id
+            select 1 from topology_edges where o.power_id = line_id and o.power_type = 'l'
             union all
-            select station_id from topology_nodes where o.osm_id = station_id
+            select 1 from topology_nodes where o.power_id = station_id and o.power_type = 's'
         )
-        group by o.osm_id;
+        group by o.power_id, o.power_type;
 
-insert into osm_tags (osm_id, tags)
-    select osm_id, tags from derived_tags d
-       where not exists (select * from osm_tags t where t.osm_id = d.osm_id);
+insert into osm_tags (power_id, power_type, tags)
+    select power_id, power_type, tags from derived_tags d
+        where not exists (
+            select 1 from osm_tags t where t.power_id = d.power_id and t.power_type = d.power_type
+        );
 
+/*
 update osm_tags t set tags = d.tags
-    from derived_tags d where d.osm_id = t.osm_id;
-
-
+    from derived_tags d
+    where d.power_id = t.power_id
+      and d.power_type = t.power_type;
+*/
 
 -- do a check. after topology-3a this should not be possible because all mapped objects
 -- have at least a 'power' tag, so they should exist
@@ -62,10 +70,10 @@ declare
     missing_edge_tags integer;
 begin
     missing_node_tags = count(*) from topology_nodes where not exists (
-         select * from osm_tags where osm_id = station_id
+         select 1 from osm_tags where power_id = station_id and power_type = 's'
     );
     missing_edge_tags = count(*) from topology_edges where not exists (
-        select * from osm_tags where osm_id = line_id
+        select 1 from osm_tags where power_id = line_id and power_type = 'l'
     );
     if missing_node_tags > 0
     then
@@ -78,5 +86,6 @@ begin
      end if;
 end;
 $$ language plpgsql;
+
 
 commit;

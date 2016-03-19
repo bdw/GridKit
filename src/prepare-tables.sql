@@ -40,8 +40,10 @@ create index osm_ids_osm_idx   on osm_ids (osm_type, osm_id);
 create index osm_ids_power_idx on osm_ids (power_type, power_id);
 
 create table osm_tags (
-    osm_name varchar(64) primary key,
-    tags    hstore
+    power_id integer,
+    power_type char(1),
+    tags    hstore,
+    primary key (power_id, power_type)
 );
 
 create table osm_objects (
@@ -194,14 +196,14 @@ insert into power_line (line_id, power_name, extent, terminals)
         where i.power_type = 'l';
 
 -- setup object and tag tracking
-insert into osm_tags (osm_name, tags)
-    select i.osm_name, hstore(n.tags)
+insert into osm_tags (power_id, power_type, tags)
+    select i.power_id, i.power_type, hstore(n.tags)
         from osm_ids i
         join planet_osm_nodes n on n.id = i.osm_id
         where i.osm_type = 'n';
 
-insert into osm_tags (osm_name, tags)
-    select i.osm_name, hstore(w.tags)
+insert into osm_tags (power_id, power_type, tags)
+    select i.power_id, i.power_type, hstore(w.tags)
            from osm_ids i
            join planet_osm_ways w on w.id = i.osm_id
            where i.osm_type = 'w';

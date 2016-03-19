@@ -1,6 +1,7 @@
 begin;
 drop table if exists line_intersections;
 drop table if exists split_lines;
+drop table if exists cropped_lines;
 
 create table line_intersections (
     line_id    integer primary key,

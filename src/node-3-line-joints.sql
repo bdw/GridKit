@@ -16,10 +16,10 @@ create table node_joint_lines (
 );
 
 create table node_split_lines (
-    line_id   integer not null,
-    source_id integer not null,
-    segment   geometry(linestring, 3857),
-    points    geometry(multipolygon, 3857)
+    new_id  integer not null,
+    old_id  integer not null,
+    segment geometry(linestring, 3857),
+    points  geometry(multipolygon, 3857)
 );
 
 
@@ -47,8 +47,7 @@ insert into node_joint_lines (line_id, extent, points)
     ) g (line_id, points)
         join power_line l on g.line_id = l.line_id;
 
-
-insert into node_split_lines (line_id, source_id, segment, points)
+insert into node_split_lines (new_id, old_id, segment, points)
     select nextval('line_id'), line_id,
            (st_dump(st_difference(extent, points))).geom, points
            from node_joint_lines;
@@ -63,18 +62,22 @@ insert into power_station (station_id, power_name, location, area)
         from shared_nodes_joint j
         join osm_ids i on i.osm_type = 'n' and i.osm_id = j.node_id;
 
--- source objects are combination of lines and the node itself
+-- source objects are combination of lines and the node itself - we'll need to register the node
 insert into osm_objects (power_id, power_type, objects)
     select i.power_id, 's', source_objects(line_id, 'l') || i.osm_name
-           from shared_nodes_joint j
-           join osm_ids i on i.osm_type = 'n' and i.osm_id = j.node_id;
+        from shared_nodes_joint j
+        join osm_ids i on i.osm_type = 'n' and i.osm_id = j.node_id;
 
 -- replacement power lines
 insert into power_line (line_id, power_name, extent, terminals)
-    select s.line_id, l.power_name, s.segment,
+    select s.new_id, l.power_name, s.segment,
            minimal_terminals(s.segment, s.points, l.terminals)
         from node_split_lines s
-        join power_line l on l.line_id = s.source_id;
+        join power_line l on l.line_id = s.old_id;
+
+insert into osm_objects (power_id, power_type, objects)
+    select new_id, 'l', source_objects(array[old_id], 'l')
+        from node_split_lines;
 
 delete from power_line l where exists (
     select 1 from node_joint_lines j where j.line_id = l.line_id
