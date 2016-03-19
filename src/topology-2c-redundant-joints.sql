@@ -101,11 +101,11 @@ insert into joint_cyclic_edges (extent, line_id)
 insert into osm_objects (power_id, power_type, objects)
     select new_id, 'l', source_objects(old_id, 'l') from joint_merged_edges;
 
-insert into topology_edges (line_id, station_id, line_extent, station_locations)
-    select new_id, e.station_id, extent, array[a.station_location, b.station_location]
-           from joint_merged_edges e
-           join topology_nodes a on a.station_id = e.station_id[1]
-           join topology_nodes b on b.station_id = e.station_id[2];
+insert into topology_edges (line_id, station_id, line_extent, direct_line)
+    select new_id, e.station_id, extent, st_makeline(a.station_location, b.station_location)
+       from joint_merged_edges e
+       join topology_nodes a on a.station_id = e.station_id[1]
+       join topology_nodes b on b.station_id = e.station_id[2];
 
 
 update topology_nodes n set line_id = array_replace(n.line_id, r.old_id, r.new_id)
@@ -125,7 +125,7 @@ with removed_cyclic_edges(station_id, line_id) as (
        )
     ) e (line_id, station_id)
         where not exists (
-            select * from joint_edge_pair p where p.joint_id = e.station_id
+            select 1 from joint_edge_pair p where p.joint_id = e.station_id
         )
         group by station_id
 ) update topology_nodes n set line_id = array_remove(n.line_id, c.line_id)
