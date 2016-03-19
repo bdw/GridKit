@@ -1,20 +1,23 @@
 begin;
 drop table if exists terminal_sets;
 create table terminal_sets (
-    v int primary key,
-    k int not null
+    v integer primary key,
+    k integer not null
 );
 create index terminal_sets_k on terminal_sets (k);
+
 insert into terminal_sets (k, v)
-    select id, id from line_terminals;
+    select src, src from terminal_intersections
+        union
+    select dst, dst from terminal_intersections;
 
 do $$
 declare
-    i record;
+    i terminal_intersections;
     s int;
     d int;
 begin
-    for i in select src, dst from terminal_intersections loop
+    for i in select * from terminal_intersections loop
         s := (select k from terminal_sets where v = i.src);
         d := (select k from terminal_sets where v = i.dst);
         if s != d then
@@ -23,5 +26,5 @@ begin
     end loop;
 end
 $$ language plpgsql;
---  select k, array_agg(v) from terminal_sets group by k having count(*) > 1 limit 100;
+
 commit;

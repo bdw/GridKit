@@ -3,12 +3,12 @@ drop table if exists removed_nodes;
 drop table if exists removed_edges;
 
 create table removed_nodes (
-    station_id varchar(64) primary key,
+    station_id integer primary key,
     location geometry(point, 3857)
 );
 
 create table removed_edges (
-    line_id varchar(64) primary key,
+    line_id integer primary key,
     extent  geometry(linestring, 3857)
 );
 

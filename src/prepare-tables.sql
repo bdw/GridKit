@@ -8,136 +8,15 @@ drop table if exists power_type_names;
 drop table if exists electrical_properties;
 drop table if exists power_station;
 drop table if exists power_line;
+drop table if exists osm_ids;
 drop table if exists osm_tags;
 drop table if exists osm_objects;
+drop sequence if exists line_id;
+drop sequence if exists station_id;
+drop function if exists source_objects(integer array, char(1));
 
-drop sequence if exists synthetic_objects;
-/* functions */
-drop function if exists buffered_terminals(geometry(linestring));
-drop function if exists buffered_station_point(geometry(point));
-drop function if exists buffered_station_area(geometry(polygon));
-drop function if exists source_objects(varchar(64) array);
-drop function if exists connect_lines(a geometry(linestring), b geometry(linestring));
-drop function if exists connect_lines_terminals(geometry, geometry);
-drop function if exists reuse_terminal(geometry, geometry, geometry);
-drop function if exists minimal_terminals(geometry, geometry, geometry);
-drop function if exists array_replace(anyarray, anyarray, anyarray);
-drop function if exists array_remove(anyarray, anyarray);
-drop function if exists array_sym_diff(anyarray, anyarray);
-drop function if exists array_merge(anyarray, anyarray);
-
--- todo, split function preparation from this file
-create function array_remove(a anyarray, b anyarray) returns anyarray as $$
-begin
-    return array((select unnest(a) except select unnest(b)));
-end;
-$$ language plpgsql;
-
-create function array_replace(a anyarray, b anyarray, n anyarray) returns anyarray as $$
-begin
-    return array((select unnest(a) except select unnest(b) union select unnest(n)));
-end;
-$$ language plpgsql;
-
-create function array_sym_diff(a anyarray, b anyarray) returns anyarray as $$
-begin
-    return array(((select unnest(a) union select unnest(b))
-                   except
-                  (select unnest(a) intersect select unnest(b))));
-end;
-$$ language plpgsql;
-
-create function array_merge(a anyarray, b anyarray) returns anyarray as $$
-begin
-    return array(select unnest(a) union select unnest(b));
-end;
-$$ language plpgsql;
-
-
-create function buffered_terminals(line geometry(linestring)) returns geometry(linestring) as $$
-begin
-    return st_buffer(st_union(st_startpoint(line), st_endpoint(line)), least(50.0, st_length(line)/3.0));
-end
-$$ language plpgsql;
-
-create function buffered_station_point(point geometry(point)) returns geometry(polygon) as $$
-begin
-    return st_buffer(point, 50);
-end;
-$$ language plpgsql;
-
-create function buffered_station_area(area geometry(polygon)) returns geometry(polygon) as $$
-begin
-    return st_convexhull(st_buffer(area, least(sqrt(st_area(area)), 100)));
-end;
-$$ language plpgsql;
-
-create function source_objects (ref varchar(64) array) returns varchar(64) array as $$
-begin
-    return array((select distinct unnest(objects) from osm_objects where osm_id = any(ref)));
-end;
-$$ language plpgsql;
-
-
-create function connect_lines (a geometry(linestring), b geometry(linestring)) returns geometry(linestring) as $$
-begin
-    -- select the shortest line that comes from joining the lines
-     -- in all possible directions
-    return (select e from (
-                select unnest(
-                         array[st_makeline(a, b),
-                               st_makeline(a, st_reverse(b)),
-                               st_makeline(st_reverse(a), b),
-                               st_makeline(st_reverse(a), st_reverse(b))]) e) f
-                order by st_length(e) limit 1);
-end;
-$$ language plpgsql;
-
-create function connect_lines_terminals(a geometry(multipolygon), b geometry(multipolygon))
-    returns geometry(multipolygon) as $$
-begin
-    return case when st_intersects(st_geometryn(a, 1), st_geometryn(b, 1)) then st_union(st_geometryn(a, 2), st_geometryn(b, 2))
-                when st_intersects(st_geometryn(a, 2), st_geometryn(b, 1)) then st_union(st_geometryn(a, 1), st_geometryn(b, 2))
-                when st_intersects(st_geometryn(a, 1), st_geometryn(b, 2)) then st_union(st_geometryn(a, 2), st_geometryn(b, 1))
-                                                                           else st_union(st_geometryn(a, 1), st_geometryn(b, 1)) end;
-end;
-$$ language plpgsql;
-
-
-
-create function reuse_terminal(point geometry, terminals geometry, line geometry) returns geometry as $$
-declare
-    max_buffer float;
-begin
-    max_buffer = least(st_length(line) / 3.0, 50.0);
-    if st_geometrytype(terminals) = 'ST_MultiPolygon' then
-        if st_distance(st_geometryn(terminals, 1), point) < 1 then
-            return st_geometryn(terminals, 1);
-        elsif st_distance(st_geometryn(terminals, 2), point) < 1 then
-            return st_geometryn(terminals, 2);
-        else
-            return st_buffer(point, max_buffer);
-        end if;
-    else
-        return st_buffer(point, max_buffer);
-    end if;
-end;
-$$ language plpgsql;
-
-create function minimal_terminals(line geometry, area geometry, terminals geometry) returns geometry as $$
-declare
-    start_term geometry;
-    end_term   geometry;
-begin
-    start_term = case when st_distance(st_startpoint(line), area) < 1 then st_buffer(st_startpoint(line), 1)
-                      else reuse_terminal(st_startpoint(line), terminals, line) end;
-    end_term   = case when st_distance(st_endpoint(line), area) < 1 then st_buffer(st_endpoint(line), 1)
-                      else reuse_terminal(st_endpoint(line), terminals, line) end;
-    return st_union(start_term, end_term);
-end;
-$$ language plpgsql;
-
-
+create sequence station_id;
+create sequence line_id;
 
 create table node_geometry (
     node_id bigint primary key,
@@ -149,17 +28,40 @@ create table way_geometry (
     line   geometry(linestring, 3857)
 );
 
+create table osm_ids (
+    osm_name varchar(64) primary key,
+    osm_id   bigint not null,
+    osm_type char(1) not null,
+    power_id integer not null,
+    power_type char(1) not null
+);
+-- both ways lookups
+create index osm_ids_osm_idx   on osm_ids (osm_type, osm_id);
+create index osm_ids_power_idx on osm_ids (power_type, power_id);
+
 create table osm_tags (
-    osm_id varchar(64), -- todo use system id for this
-    tags   hstore,
-    primary key (osm_id)
+    power_id integer,
+    power_type char(1),
+    tags    hstore,
+    primary key (power_id, power_type)
 );
 
 create table osm_objects (
-    osm_id varchar(64),
-    objects varchar(64) array,
-    primary key (osm_id)
+    power_id integer,
+    power_type char(1),
+    objects  varchar(64) array not null,
+    primary key (power_id, power_type)
 );
+
+
+create function source_objects(pi integer array, pt char(1)) returns varchar(64) array
+as $$
+begin
+    return array(select distinct unnest(objects) from osm_objects o
+                     where pt = o.power_type and o.power_id = any(pi));
+end;
+$$ language plpgsql;
+
 
 /* lookup table for power types */
 create table power_type_names (
@@ -175,33 +77,37 @@ create table relation_member (
 );
 
 create table electrical_properties (
-    osm_id varchar(64),
+    power_id integer,
+    power_type char(1),
     frequency float array,
     voltage int array,
     conductor_bundles int array,
     subconductors int array,
     power_name varchar(64),
     operator text,
-    name text
+    name text,
+    primary key (power_id, power_type)
 );
+
 
 create table power_station (
-    osm_id varchar(64),
+    station_id integer primary key,
     power_name varchar(64) not null,
     location geometry(point, 3857),
-    area geometry(polygon, 3857),
-    primary key (osm_id)
+    area geometry(polygon, 3857)
 );
+
+create index power_station_area on power_station using gist (area);
 
 create table power_line (
-    osm_id varchar(64),
+    line_id integer primary key,
     power_name varchar(64) not null,
     extent    geometry(linestring, 3857),
-    terminals geometry(geometry, 3857),
-    primary key (osm_id)
+    terminals geometry(geometry, 3857)
 );
 
-
+create index power_line_extent on power_line using gist(extent);
+create index power_line_terminals on power_line using gist(terminals);
 
 
 /* all things recognised as certain stations */
@@ -221,8 +127,6 @@ insert into power_type_names (power_name, power_type)
 
 /* we could read this out of the planet_osm_point table, but i'd
  * prefer calculating under my own control */
-
-
 insert into node_geometry (node_id, point)
     select id, st_setsrid(st_makepoint(lon/100.0, lat/100.0), 3857)
         from planet_osm_nodes;
@@ -246,59 +150,65 @@ insert into relation_member (relation_id, member_id, member_role)
               from planet_osm_rels
     ) s;
 
-
-/* stations as ways */
-with way_stations(osm_id, power_name, geom) as (
-     select concat('w', id), hstore(tags)->'power',
-          case when st_isclosed(line) then st_makepolygon(line)
-               when st_npoints(line) = 2 then st_buffer(line, 1)
-               else st_makepolygon(st_addpoint(line, st_startpoint(line))) end
-          from planet_osm_ways w
-          join way_geometry g on g.way_id = w.id
-          where hstore(tags)->'power' in (
-               select power_name from power_type_names
-                    where power_type = 's'
-          )
-)
-insert into power_station (osm_id, power_name, location, area)
-     select osm_id, power_name, st_centroid(geom),
-            buffered_station_area(geom)
-            from way_stations;
-
-insert into power_station (osm_id, power_name, location, area)
-    select concat('n', n.id), hstore(tags)->'power', point, buffered_station_point(point)
+-- identify objects as lines or stations
+insert into osm_ids (osm_id, osm_type, osm_name, power_id, power_type)
+    select id, 'n', concat('n', id), nextval('station_id'), 's'
         from planet_osm_nodes n
-        join node_geometry g on g.node_id = n.id
-        where hstore(tags)->'power' in (
-             select power_name from power_type_names where power_type = 's'
-        );
+        join power_type_names t
+        on hstore(n.tags)->'power' = t.power_name
+        and t.power_type = 's';
 
-insert into power_line (osm_id, power_name, extent, terminals)
-    select concat('w', id), hstore(tags)->'power', line, buffered_terminals(line)
-        from planet_osm_ways w
-        join way_geometry g on g.way_id = w.id
-        where hstore(tags)->'power' in (
-            select power_name from power_type_names where power_type = 'l'
-        );
+insert into osm_ids (osm_id, osm_type, osm_name, power_id, power_type)
+    select id, 'w', concat('w', id), nextval('station_id'), 's'
+        from planet_osm_ways n
+        join power_type_names t
+        on hstore(n.tags)->'power' = t.power_name
+        and t.power_type = 's';
 
--- initialize osm objects table
-insert into osm_objects (osm_id, objects)
-    select osm_id, array[osm_id] from power_line;
+insert into osm_ids (osm_id, osm_type, osm_name, power_id, power_type)
+    select id, 'w', concat('w', id), nextval('line_id'), 'l'
+        from planet_osm_ways n
+        join power_type_names t
+        on hstore(n.tags)->'power' = t.power_name
+        and t.power_type = 'l';
 
-insert into osm_objects (osm_id, objects)
-    select osm_id, array[osm_id] from power_station;
+insert into power_station (station_id, power_name, location, area)
+     select i.power_id, hstore(n.tags)->'power', ng.point, buffered_station_point(ng.point)
+          from osm_ids i
+          join planet_osm_nodes n on n.id = i.osm_id
+          join node_geometry ng on  ng.node_id = i.osm_id
+          where i.power_type = 's' and i.osm_type = 'n';
 
--- initialize osm tags table
-insert into osm_tags (osm_id, tags)
-    select concat('n', id), hstore(tags) from planet_osm_nodes where tags is not null;
-insert into osm_tags (osm_id, tags)
-    select concat('w', id), hstore(tags) from planet_osm_ways where tags is not null;
+insert into power_station (station_id, power_name, location, area)
+     select i.power_id, hstore(w.tags)->'power',
+            st_centroid(wg.line),
+            buffered_station_area(way_station_area(wg.line))
+          from osm_ids i
+          join planet_osm_ways w on w.id = i.osm_id
+          join way_geometry wg   on wg.way_id = i.osm_id
+          where i.power_type = 's' and i.osm_type = 'w';
 
+insert into power_line (line_id, power_name, extent, terminals)
+    select i.power_id, hstore(w.tags)->'power', wg.line, buffered_terminals(wg.line)
+        from osm_ids i
+        join planet_osm_ways w on w.id = i.osm_id
+        join way_geometry wg on wg.way_id = i.osm_id
+        where i.power_type = 'l';
 
-create index power_station_area   on power_station using gist(area);
-create index power_line_extent    on power_line    using gist(extent);
-create index power_line_terminals on power_line    using gist(terminals);
-create index osm_objects_objects  on osm_objects   using gin(objects);
-create sequence synthetic_objects start 1;
+-- setup object and tag tracking
+insert into osm_tags (power_id, power_type, tags)
+    select i.power_id, i.power_type, hstore(n.tags)
+        from osm_ids i
+        join planet_osm_nodes n on n.id = i.osm_id
+        where i.osm_type = 'n';
 
+insert into osm_tags (power_id, power_type, tags)
+    select i.power_id, i.power_type, hstore(w.tags)
+           from osm_ids i
+           join planet_osm_ways w on w.id = i.osm_id
+           where i.osm_type = 'w';
+
+insert into osm_objects (power_id, power_type, objects)
+     select power_id, power_type, array[osm_name]
+         from osm_ids;
 commit;

@@ -3,39 +3,44 @@ begin;
 drop table if exists merged_stations;
 
 create table merged_stations (
-    synth_id varchar(64),
-    objects varchar(64) array,
-    area    geometry(geometry, 3857)
+    new_id integer primary key,
+    old_id integer array,
+    area   geometry(geometry, 3857)
 );
 
 /* Recursive union-find implementation. Only feasible becuase this set is initially pretty small */
-with recursive overlapping_stations(osm_id, objects) as (
-    select min(b.osm_id) as osm_id, array_agg(b.osm_id order by b.osm_id) as objects
+with recursive overlapping_stations(min_id, objects) as (
+    select min(b.station_id), array_agg(b.station_id order by b.station_id)
          from power_station a
          join power_station b on ST_Intersects(a.area, b.area)
-         group by a.osm_id
+         group by a.station_id
          having count(*) > 1
-), combinations as (
+), combinations(min_id, objects) as (
     select * from overlapping_stations
     union
-    select osm_id, array_agg(distinct e order by e) from (
-        select least(a.osm_id, b.osm_id) as osm_id, unnest(a.objects || b.objects) as e
-           from combinations as a join overlapping_stations b on b.objects && a.objects
-    ) sq group by sq.osm_id
-) insert into merged_stations (synth_id, objects, area)
-    select concat('m', nextval('synthetic_objects')), objects,
-           (select ST_Union(b.area) from power_station b where b.osm_id in (select unnest(a.objects))) as area
-                from combinations a where not exists (
-                   select * from combinations b where b.objects @> a.objects and a.objects != b.objects
-                );
+    select min_id, array_agg(distinct station_id order by station_id) from (
+        select least(a.min_id, b.min_id), unnest(a.objects || b.objects)
+           from combinations a
+           join overlapping_stations b on b.objects && a.objects
+    ) sq(min_id, station_id) group by sq.min_id
+) insert into merged_stations (new_id, old_id, area)
+    select nextval('station_id'), a.objects, (
+           select ST_Union(s.area) from power_station s where s.station_id = any(a.objects)
+        )
+        from combinations a where not exists (
+            select * from combinations b where b.objects @> a.objects and a.objects != b.objects
+        );
 
-insert into power_station (osm_id, power_name, location, area)
-    select synth_id, 'merge', ST_Centroid(area), area
+insert into power_station (station_id, power_name, location, area)
+    select new_id, 'merge', ST_Centroid(area), area
          from merged_stations;
 
-insert into osm_objects (osm_id, objects)
-    select synth_id, source_objects(objects) from merged_stations;
+insert into osm_objects (power_id, power_type, objects)
+    select new_id, 's', source_objects(old_id, 's')
+        from merged_stations;
 
-delete from power_station where osm_id in (select unnest(objects) from merged_stations);
+delete from power_station s where exists (
+    select 1 from merged_stations m where s.station_id = any(m.old_id)
+);
 
 commit;

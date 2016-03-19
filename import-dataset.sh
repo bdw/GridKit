@@ -32,5 +32,7 @@ osm2pgsql -d $PGDATABASE -c -k -s \
 	-S ./power.style \
 	$OSM2PGSQL_FLAGS \
 	$OSM_DATAFILE || exit 1
-time psql -f ./prepare-tables.sql
+
+psql -f ./src/prepare-functions.sql
+psql -f ./src/prepare-tables.sql
 
