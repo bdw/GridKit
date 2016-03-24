@@ -5,7 +5,9 @@ drop table if exists node_geometry;
 drop table if exists way_geometry;
 drop table if exists relation_member;
 drop table if exists power_type_names;
+drop table if exists reference_parameters;
 drop table if exists electrical_properties;
+
 drop table if exists power_station;
 drop table if exists power_line;
 drop table if exists osm_ids;
@@ -54,6 +56,8 @@ create table osm_objects (
 );
 
 
+
+
 create function source_objects(pi integer array, pt char(1)) returns varchar(64) array
 as $$
 begin
@@ -69,6 +73,16 @@ create table power_type_names (
     power_type char(1) not null,
     check (power_type in ('s','l','r', 'v'))
 );
+
+create table reference_parameters (
+    voltage integer primary key,
+    num_subconductors integer not null,
+    r_ohmkm float not null,
+    x_ohmkm float not null,
+    c_nfkm  float not null,
+    i_th_max_a float not null
+);
+
 
 create table relation_member (
     relation_id bigint,
@@ -123,6 +137,11 @@ insert into power_type_names (power_name, power_type)
            -- virtual elements
            ('merge', 'v'),
            ('joint', 'v');
+
+insert into reference_parameters (voltage, num_subconductors, r_ohmkm, x_ohmkm, c_nfkm, i_th_max_a)
+    -- taken from scigrid, who took them from DENA, who took them from... ?
+    values (220000, 2, 0.080, 0.32, 11.5, 1.3),
+           (380000, 4, 0.025, 0.25, 13.7, 2.6);
 
 
 /* we could read this out of the planet_osm_point table, but i'd
