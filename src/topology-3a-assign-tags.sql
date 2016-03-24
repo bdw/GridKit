@@ -15,7 +15,7 @@ begin
         for k in select skeys(t) loop
             if not r ? k then
                 r = r || hstore(k, t->k);
-            elsif (r->k) != (t->k) and k in ('voltage', 'wires', 'cables', 'frequency', 'name') then
+            elsif k in ('voltage', 'wires', 'cables', 'frequency', 'name') then
                 -- assume we can't fix this now, so join them separated by semicolons
                 v = (r->k) || ';' || (t->k);
                 r = r || hstore(k, v);
@@ -56,6 +56,7 @@ insert into osm_tags (power_id, power_type, tags)
         );
 
 /*
+-- only necessary when re-running the script
 update osm_tags t set tags = d.tags
     from derived_tags d
     where d.power_id = t.power_id
