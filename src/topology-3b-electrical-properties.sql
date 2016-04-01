@@ -73,7 +73,7 @@ end;
 $$ language plpgsql;
 truncate electrical_properties;
 
-insert into electrical_properties (power_id, power_type, frequency, voltage, conductor_bundles, subconductors, power_name, operator, name)
+insert into electrical_properties (power_id, power_type, frequency, voltage, cables, wires, power_name, operator, name)
     select e.line_id, 'l', string_to_float_array(tags->'frequency', ';'), string_to_integer_array(tags->'voltage', ';'),
            string_to_integer_array(tags->'cables', ';'), number_of_wires(tags->'wires'),
            tags->'power', tags->'operator', tags->'name'
@@ -86,7 +86,7 @@ insert into electrical_properties (power_id, power_type, frequency, voltage, pow
         where topology_name != 'joint';
 
 /* joints are more like lines. */
-insert into electrical_properties (power_id, power_type, frequency, voltage, conductor_bundles, subconductors, power_name, operator, name)
+insert into electrical_properties (power_id, power_type, frequency, voltage, cables, wires, power_name, operator, name)
     select n.station_id, 's', string_to_float_array(tags->'frequency', ';'), string_to_integer_array(tags->'voltage', ';'),
            string_to_integer_array(tags->'cables', ';'), number_of_wires(tags->'wires'),
            tags->'power', tags->'operator', tags->'name'

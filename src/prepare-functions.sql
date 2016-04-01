@@ -4,6 +4,7 @@ drop function if exists array_remove(anyarray, anyarray);
 drop function if exists array_replace(anyarray, anyarray, anyarray);
 drop function if exists array_sym_diff(anyarray, anyarray);
 drop function if exists array_merge(anyarray, anyarray);
+drop function if exists array_most_common(anyarray);
 
 drop function if exists buffered_terminals(geometry(linestring));
 drop function if exists buffered_station_point(geometry(point));
@@ -15,9 +16,10 @@ drop function if exists reuse_terminal(geometry, geometry, geometry);
 drop function if exists minimal_terminals(geometry, geometry, geometry);
 
 
+
 create function array_remove(a anyarray, b anyarray) returns anyarray as $$
 begin
-    return array((select unnest(a) except select unnest(b)));
+    return array(select v from (select unnest(a)) t(v) where not v = any(b));
 end;
 $$ language plpgsql;
 
@@ -38,6 +40,15 @@ $$ language plpgsql;
 create function array_merge(a anyarray, b anyarray) returns anyarray as $$
 begin
     return array(select unnest(a) union select unnest(b));
+end;
+$$ language plpgsql;
+
+
+create function array_most_common(a anyarray) returns anyelement as $$
+begin
+        return v from (
+           select unnest(a)
+        ) t(v) group by v order by count(*) desc limit 1;
 end;
 $$ language plpgsql;
 
