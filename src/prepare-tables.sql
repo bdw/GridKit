@@ -76,7 +76,7 @@ create table power_type_names (
 
 create table reference_parameters (
     voltage integer primary key,
-    num_subconductors integer not null,
+    wires  integer not null,
     r_ohmkm float not null,
     x_ohmkm float not null,
     c_nfkm  float not null,
@@ -138,7 +138,7 @@ insert into power_type_names (power_name, power_type)
            ('merge', 'v'),
            ('joint', 'v');
 
-insert into reference_parameters (voltage, num_subconductors, r_ohmkm, x_ohmkm, c_nfkm, i_th_max_a)
+insert into reference_parameters (voltage, wires, r_ohmkm, x_ohmkm, c_nfkm, i_th_max_a)
     -- taken from scigrid, who took them from DENA, who took them from... ?
     values (220000, 2, 0.080, 0.32, 11.5, 1.3),
            (380000, 4, 0.025, 0.25, 13.7, 2.6);

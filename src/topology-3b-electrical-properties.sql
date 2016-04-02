@@ -73,6 +73,7 @@ end;
 $$ language plpgsql;
 truncate electrical_properties;
 
+
 insert into electrical_properties (power_id, power_type, frequency, voltage, cables, wires, power_name, operator, name)
     select e.line_id, 'l', string_to_float_array(tags->'frequency', ';'), string_to_integer_array(tags->'voltage', ';'),
            string_to_integer_array(tags->'cables', ';'), number_of_wires(tags->'wires'),
@@ -85,7 +86,7 @@ insert into electrical_properties (power_id, power_type, frequency, voltage, pow
         from topology_nodes n join osm_tags t on n.station_id = t.power_id and t.power_type = 's'
         where topology_name != 'joint';
 
-/* joints are more like lines. */
+-- joints are more like lines.
 insert into electrical_properties (power_id, power_type, frequency, voltage, cables, wires, power_name, operator, name)
     select n.station_id, 's', string_to_float_array(tags->'frequency', ';'), string_to_integer_array(tags->'voltage', ';'),
            string_to_integer_array(tags->'cables', ';'), number_of_wires(tags->'wires'),
