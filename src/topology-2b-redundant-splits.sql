@@ -41,7 +41,7 @@ with split_simplify_candidates (line_id, station_id, simple_extent, original_len
         where abs(original_length - st_length(simple_extent)) < 300;
 
 insert into osm_objects (power_id, power_type, objects)
-    select new_id, 'l', source_objects(old_id, 'l') from simplified_splits;
+    select new_id, 'l', track_objects(old_id, 'l', 'merge') from simplified_splits;
 
 -- edges are only ever replaced, never removed, so we don't need to do a pruning step
 

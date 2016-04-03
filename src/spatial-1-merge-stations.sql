@@ -36,7 +36,7 @@ insert into power_station (station_id, power_name, location, area)
          from merged_stations;
 
 insert into osm_objects (power_id, power_type, objects)
-    select new_id, 's', source_objects(old_id, 's')
+    select new_id, 's', track_objects(old_id, 's', 'merge')
         from merged_stations;
 
 delete from power_station s where exists (

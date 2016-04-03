@@ -48,7 +48,7 @@ insert into power_station (station_id, power_name, location, area)
         from line_joints;
 
 insert into osm_objects (power_id, power_type, objects)
-    select station_id, 's', source_objects(line_id, 'l') from line_joints;
+    select station_id, 's', track_objects(line_id, 'l', 'merge') from line_joints;
 
 update power_line l
    set extent = j.new_extent,

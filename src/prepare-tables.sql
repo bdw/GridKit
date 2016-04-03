@@ -15,7 +15,7 @@ drop table if exists osm_tags;
 drop table if exists osm_objects;
 drop sequence if exists line_id;
 drop sequence if exists station_id;
-drop function if exists source_objects(integer array, char(1));
+drop function if exists track_objects (integer array, char(1), text);
 
 create sequence station_id;
 create sequence line_id;
@@ -37,6 +37,7 @@ create table osm_ids (
     power_id integer not null,
     power_type char(1) not null
 );
+
 -- both ways lookups
 create index osm_ids_osm_idx   on osm_ids (osm_type, osm_id);
 create index osm_ids_power_idx on osm_ids (power_type, power_id);
@@ -51,18 +52,14 @@ create table osm_tags (
 create table osm_objects (
     power_id integer,
     power_type char(1),
-    objects  varchar(64) array not null,
+    objects  jsonb,
     primary key (power_id, power_type)
 );
 
-
-
-
-create function source_objects(pi integer array, pt char(1)) returns varchar(64) array
+create function track_objects(pi integer array, pt char(1), op text) returns jsonb
 as $$
 begin
-    return array(select distinct unnest(objects) from osm_objects o
-                     where pt = o.power_type and o.power_id = any(pi));
+    return json_build_object(op, to_json(array(select objects from osm_objects where power_id = any(pi) and power_type = pt)))::jsonb;
 end;
 $$ language plpgsql;
 
@@ -228,6 +225,6 @@ insert into osm_tags (power_id, power_type, tags)
            where i.osm_type = 'w';
 
 insert into osm_objects (power_id, power_type, objects)
-     select power_id, power_type, array[osm_name]
+     select power_id, power_type, to_json(osm_name)::jsonb
          from osm_ids;
 commit;

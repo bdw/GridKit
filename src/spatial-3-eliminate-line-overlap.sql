@@ -46,7 +46,7 @@ insert into power_line (line_id, power_name, extent, terminals)
         join power_line l on l.line_id = s.old_id;
 
 insert into osm_objects (power_id, power_type, objects)
-    select new_id, 'l', source_objects(array[old_id], 'l') from split_lines;
+    select new_id, 'l', track_objects(array[old_id], 'l', 'split') from split_lines;
 
 update power_line l set extent = c.new_extent
      from cropped_lines c where c.line_id = l.line_id;

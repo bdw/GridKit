@@ -99,11 +99,11 @@ update power_line l
 
 -- track new lines
 insert into osm_objects(power_id, power_type, objects)
-    select new_id, 'l', source_objects(array[old_id], 'l') from attachment_split_lines;
+    select new_id, 'l', track_objects(array[old_id], 'l', 'split') from attachment_split_lines;
 
 -- and stations
 insert into osm_objects (power_id, power_type, objects)
-    select station_id, 's', source_objects(objects, 'l') from attachment_stations;
+    select station_id, 's', track_objects(objects, 'l', 'merge') from attachment_stations;
 
 
 

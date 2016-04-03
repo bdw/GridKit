@@ -64,7 +64,11 @@ insert into power_station (station_id, power_name, location, area)
 
 -- source objects are combination of lines and the node itself - we'll need to register the node
 insert into osm_objects (power_id, power_type, objects)
-    select i.power_id, 's', source_objects(line_id, 'l') || i.osm_name
+    select i.power_id, 's', json_build_object('merge', array(
+            select objects from osm_objects where power_id = any(line_id) and power_type = 'l'
+            union all
+            select to_json(i.osm_name)::jsonb
+        ))::jsonb
         from shared_nodes_joint j
         join osm_ids i on i.osm_type = 'n' and i.osm_id = j.node_id;
 
@@ -76,7 +80,7 @@ insert into power_line (line_id, power_name, extent, terminals)
         join power_line l on l.line_id = s.old_id;
 
 insert into osm_objects (power_id, power_type, objects)
-    select new_id, 'l', source_objects(array[old_id], 'l')
+    select new_id, 'l', track_objects(array[old_id], 'l', 'split')
         from node_split_lines;
 
 delete from power_line l where exists (

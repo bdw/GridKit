@@ -75,7 +75,7 @@ insert into power_line (line_id, power_name, extent, terminals)
     select new_id, 'merge', extent, terminals from merged_lines;
 
 insert into osm_objects (power_id, power_type, objects)
-    select new_id, 'l', source_objects(old_id, 'l') from merged_lines;
+    select new_id, 'l', track_objects(old_id, 'l', 'join') from merged_lines;
 
 delete from power_line l where exists (
     select 1 from merged_lines m where m.new_id = l.line_id

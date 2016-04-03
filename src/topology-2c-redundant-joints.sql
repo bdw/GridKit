@@ -99,7 +99,7 @@ insert into joint_cyclic_edges (extent, line_id)
         group by k,e;
 
 insert into osm_objects (power_id, power_type, objects)
-    select new_id, 'l', source_objects(old_id, 'l') from joint_merged_edges;
+    select new_id, 'l', track_objects(old_id, 'l', 'merge') from joint_merged_edges;
 
 insert into topology_edges (line_id, station_id, line_extent, direct_line)
     select new_id, e.station_id, extent, st_makeline(a.station_location, b.station_location)

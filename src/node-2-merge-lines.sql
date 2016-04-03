@@ -58,15 +58,14 @@ insert into node_merged_lines (line_id, way_id, extent)
     select nextval('line_id'), array_agg(v), e
         from node_line_set group by k, e;
 
-
 insert into power_line (line_id, power_name, extent, terminals)
     select line_id, 'merged', extent, buffered_terminals(extent)
         from node_merged_lines;
 
 insert into osm_objects (power_id, power_type, objects)
-    select line_id, 'l', array(
+    select line_id, 'l', json_build_object('join', array(
         select osm_name from osm_ids i where i.osm_id = any(m.way_id) and i.osm_type = 'w'
-    )
+    ))::jsonb
     from node_merged_lines m;
 
 delete from power_line l where exists (
