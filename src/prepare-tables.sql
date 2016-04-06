@@ -43,10 +43,8 @@ create index osm_ids_osm_idx   on osm_ids (osm_type, osm_id);
 create index osm_ids_power_idx on osm_ids (power_type, power_id);
 
 create table osm_tags (
-    power_id integer,
-    power_type char(1),
-    tags    hstore,
-    primary key (power_id, power_type)
+    osm_name varchar(64) primary key,
+    tags    hstore
 );
 
 create table osm_objects (
@@ -73,7 +71,7 @@ create table power_type_names (
 
 create table reference_parameters (
     voltage integer primary key,
-    num_subconductors integer not null,
+    wires   integer not null,
     r_ohmkm float not null,
     x_ohmkm float not null,
     c_nfkm  float not null,
@@ -92,8 +90,8 @@ create table electrical_properties (
     power_type char(1),
     frequency float array,
     voltage int array,
-    conductor_bundles int array,
-    subconductors int array,
+    cables int array,
+    wires int array,
     power_name varchar(64),
     operator text,
     name text,
@@ -135,7 +133,7 @@ insert into power_type_names (power_name, power_type)
            ('merge', 'v'),
            ('joint', 'v');
 
-insert into reference_parameters (voltage, num_subconductors, r_ohmkm, x_ohmkm, c_nfkm, i_th_max_a)
+insert into reference_parameters (voltage, wires, r_ohmkm, x_ohmkm, c_nfkm, i_th_max_a)
     -- taken from scigrid, who took them from DENA, who took them from... ?
     values (220000, 2, 0.080, 0.32, 11.5, 1.3),
            (380000, 4, 0.025, 0.25, 13.7, 2.6);
@@ -212,14 +210,14 @@ insert into power_line (line_id, power_name, extent, terminals)
         where i.power_type = 'l';
 
 -- setup object and tag tracking
-insert into osm_tags (power_id, power_type, tags)
-    select i.power_id, i.power_type, hstore(n.tags)
+insert into osm_tags (osm_name, tags)
+    select i.osm_name, hstore(n.tags)
         from osm_ids i
         join planet_osm_nodes n on n.id = i.osm_id
         where i.osm_type = 'n';
 
-insert into osm_tags (power_id, power_type, tags)
-    select i.power_id, i.power_type, hstore(w.tags)
+insert into osm_tags (osm_name, tags)
+    select i.osm_name, hstore(w.tags)
            from osm_ids i
            join planet_osm_ways w on w.id = i.osm_id
            where i.osm_type = 'w';
