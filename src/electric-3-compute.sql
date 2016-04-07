@@ -31,11 +31,11 @@ $$ language plpgsql;
 
 
 
-create function electric_structure_from_tags(o text) returns electric_structure
+create function electric_structure_from_tags(o text) returns electric_structure array
 as $$
 declare
     t electric_tags;
-    e electric_structure;
+    e electric_structure array;
     n integer;
 begin
      select * into t from electric_tags where osm_name = o;
