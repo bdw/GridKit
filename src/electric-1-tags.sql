@@ -7,22 +7,14 @@ drop function if exists number_of_wires(text);
 
 create table electric_tags (
     osm_name varchar(64) primary key,
+    power_name varchar(64) not null,
     voltage integer array,
     frequency float array,
     cables integer array,
     wires integer array
 );
 
-create table wires_to_numbers (
-    name varchar(16),
-    nr   integer
-);
-
-insert into wires_to_numbers(name, nr)
-    values ('single', 1),
-           ('double', 2),
-           ('triple', 3),
-           ('quad', 4);
+create index electric_tags_power_name_idx on electric_tags (power_name);
 
 
 create function string_to_integer_array(a text, b text) returns integer array as $$
@@ -58,6 +50,17 @@ end;
 $$ language plpgsql;
 
 
+create table wires_to_numbers (
+    name varchar(16),
+    nr   integer
+);
+
+insert into wires_to_numbers(name, nr)
+    values ('single', 1),
+           ('double', 2),
+           ('triple', 3),
+           ('quad', 4);
+
 
 create function number_of_wires(a text) returns integer array as $$
 declare
@@ -82,10 +85,13 @@ begin
 end;
 $$ language plpgsql;
 
-insert into electric_tags (osm_name, voltage, frequency, cables, wires)
-   select osm_name, string_to_integer_array(tags->'voltage',';'),
+
+insert into electric_tags (osm_name, power_name, voltage, frequency, cables, wires)
+   select osm_name, tags->'power',
+          string_to_integer_array(tags->'voltage',';'),
           string_to_float_array(tags->'frequency',';'),
           string_to_integer_array(tags->'cables',';'),
-          number_of_wires(tags->'wires') from osm_tags;
+          number_of_wires(tags->'wires')
+       from osm_tags;
 
 commit;
