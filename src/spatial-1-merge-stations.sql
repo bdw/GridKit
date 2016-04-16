@@ -12,7 +12,7 @@ create table merged_stations (
 with recursive overlapping_stations(min_id, objects) as (
     select min(b.station_id), array_agg(b.station_id order by b.station_id)
          from power_station a
-         join power_station b on ST_Intersects(a.area, b.area)
+         join power_station b on st_dwithin(a.area, b.area, 0)
          group by a.station_id
          having count(*) > 1
 ), combinations(min_id, objects) as (

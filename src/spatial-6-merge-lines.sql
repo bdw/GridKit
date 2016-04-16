@@ -3,81 +3,92 @@ drop table if exists line_pairs;
 drop table if exists line_sets;
 drop table if exists merged_lines;
 
+-- outer radius of merged line
+drop function if exists outer_radius(geometry, int array, geometry, int array, geometry);
+create function outer_radius (a_e geometry, a_r int array, b_e geometry, b_r int array, c_e geometry) returns int array as $$
+begin
+    return array[case when st_startpoint(a_e) = st_startpoint(c_e) then a_r[1]
+                      when st_endpoint(a_e)   = st_startpoint(c_e) then a_r[2]
+                      when st_startpoint(b_e) = st_startpoint(c_e) then b_r[1]
+                      when st_endpoint(b_e)   = st_startpoint(c_e) then b_r[2] end,
+                 case when st_startpoint(a_e) = st_endpoint(c_e) then a_r[1]
+                      when st_endpoint(a_e)   = st_endpoint(c_e) then a_r[2]
+                      when st_startpoint(b_e) = st_endpoint(c_e) then b_r[1]
+                      when st_endpoint(b_e)   = st_endpoint(c_e) then b_r[2] end];
+end;
+$$ language plpgsql;
+
 create table line_pairs (
-    src integer,
-    dst integer,
-    primary key (src, dst)
+    src_id integer,
+    dst_id integer,
+    primary key (src_id, dst_id)
 );
 
 create table line_sets (
-    k integer not null,
-    v integer primary key,
-    e geometry(linestring, 3857),
-    t geometry(geometry, 3857)
+    set_key integer not null,
+    line_id integer primary key,
+    extent  geometry(linestring, 3857),
+    radius  integer array[2]
 );
 
 
 create table merged_lines (
-    new_id    integer primary key,
-    old_id    integer array,
-    extent    geometry(linestring, 3857),
-    terminals geometry(geometry, 3857)
+    new_id  integer primary key,
+    old_id  integer array,
+    extent  geometry(linestring, 3857),
+    radius  integer array[2]
 );
 
+insert into line_pairs (src_id, dst_id)
+    select distinct min(line_id), max(line_id)
+        from terminal_sets
+        group by set_key having count(*) = 2;
 
-insert into line_pairs (src, dst)
-    select distinct least(a.line_id, b.line_id), greatest(a.line_id, b.line_id)
-        from terminal_intersections i
-        join line_terminals a on a.terminal_id = i.src
-        join line_terminals b on b.terminal_id = i.dst
-        where not exists (
-            select 1 from line_joints j
-                where a.terminal_id = any(j.terminal_id)
-                   or b.terminal_id = any(j.terminal_id)
+insert into line_sets (set_key, line_id, extent, radius)
+    select line_id, line_id, extent, radius from power_line
+        where line_id in (
+           select src_id from line_pairs union select dst_id from line_pairs
         );
 
-insert into line_sets (k, v, e, t)
-    select line_id, line_id, extent, terminals from power_line
-    where line_id in (
-        select src from line_pairs union select dst from line_pairs
-    );
 
-
-create index line_sets_k on line_sets (k);
+create index line_sets_k on line_sets (set_key);
 -- union-find algorithm again.
 
 do $$
 declare
-    s line_sets;
-    d line_sets;
-    l line_pairs;
+    src line_sets;
+    dst line_sets;
+    pair line_pairs;
+    ext geometry(linestring,3857);
+    rad int array[2];
 begin
-    for l in select * from line_pairs loop
-        select * into s from line_sets where v = l.src;
-        select * into d from line_sets where v = l.dst;
-        if s.k != d.k then
-            update line_sets set k = s.k where k = d.k;
-            update line_sets set e = connect_lines(s.e, d.e),
-                                 t = connect_lines_terminals(s.t, d.t)
-                where k = s.k;
+    for pair in select * from line_pairs loop
+        select * into src from line_sets where line_id = pair.src_id;
+        select * into dst from line_sets where line_id = pair.dst_id;
+        if src.set_key != dst.set_key then
+            update line_sets set set_key = src.set_key where set_key = dst.set_key;
+            ext = connect_lines(src.extent, dst.extent);
+            rad = outer_radius(src.extent, src.radius, dst.extent, dst.radius, ext);
+            update line_sets set extent = ext, radius = rad where set_key = src.set_key;
         end if;
      end loop;
 end
 $$ language plpgsql;
 
+insert into merged_lines (new_id, extent, radius, old_id)
+    select nextval('line_id'), extent, radius, array(select z.line_id from line_sets z where z.set_key = s.set_key)
+        from line_sets s where line_id = set_key;
 
-insert into merged_lines (new_id, extent, terminals, old_id)
-    select nextval('line_id'), s.e, s.t, array_agg(v)
-       from line_sets s join power_line l on s.v = l.line_id
-       group by s.k, s.e, s.t having count(*) >= 2;
+insert into power_line (line_id, power_name, extent, radius)
+    select new_id, 'merge', extent, radius from merged_lines;
 
-insert into power_line (line_id, power_name, extent, terminals)
-    select new_id, 'merge', extent, terminals from merged_lines;
 
 insert into osm_objects (power_id, power_type, objects)
     select new_id, 'l', track_objects(old_id, 'l', 'join') from merged_lines;
 
-delete from power_line l where exists (
-    select 1 from merged_lines m where m.new_id = l.line_id
+
+delete from power_line l where line_id in (
+    select unnest(old_id) from merged_lines m
 );
+
 commit;

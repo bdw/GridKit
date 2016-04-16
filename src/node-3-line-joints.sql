@@ -73,9 +73,9 @@ insert into osm_objects (power_id, power_type, objects)
         join osm_ids i on i.osm_type = 'n' and i.osm_id = j.node_id;
 
 -- replacement power lines
-insert into power_line (line_id, power_name, extent, terminals)
+insert into power_line (line_id, power_name, extent, radius)
     select s.new_id, l.power_name, s.segment,
-           minimal_terminals(s.segment, s.points, l.terminals)
+           minimal_radius(s.segment, s.points, l.radius)
         from node_split_lines s
         join power_line l on l.line_id = s.old_id;
 

@@ -10,10 +10,9 @@ drop function if exists buffered_station_point(geometry(point));
 drop function if exists way_station_area(geometry(linestring));
 drop function if exists buffered_station_area(geometry(polygon));
 drop function if exists connect_lines(a geometry(linestring), b geometry(linestring));
-drop function if exists connect_lines_terminals(geometry, geometry);
-drop function if exists reuse_terminal(geometry, geometry, geometry);
-drop function if exists minimal_terminals(geometry, geometry, geometry);
-
+drop function if exists default_radius(geometry);
+drop function if exists minimal_radius(geometry, geometry, int array);
+drop function if exists track_objects(integer array, char(1), text);
 
 create function array_remove(a anyarray, b anyarray) returns anyarray as $$
 begin
@@ -82,47 +81,27 @@ begin
 end;
 $$ language plpgsql;
 
-create function connect_lines_terminals(a geometry(multipolygon), b geometry(multipolygon))
-    returns geometry(multipolygon) as $$
+create function default_radius(line geometry) returns int array as $$
+declare
+    r numeric;
 begin
-    return case when st_intersects(st_geometryn(a, 1), st_geometryn(b, 1)) then st_union(st_geometryn(a, 2), st_geometryn(b, 2))
-                when st_intersects(st_geometryn(a, 2), st_geometryn(b, 1)) then st_union(st_geometryn(a, 1), st_geometryn(b, 2))
-                when st_intersects(st_geometryn(a, 1), st_geometryn(b, 2)) then st_union(st_geometryn(a, 2), st_geometryn(b, 1))
-                                                                           else st_union(st_geometryn(a, 1), st_geometryn(b, 1)) end;
+    r = least(floor(st_length(line)/3.0), 50);
+    return array[r,r];
+end;
+$$ language plpgsql;
+
+create function minimal_radius(line geometry, area geometry, radius int array) returns int array as $$
+begin
+    return array[case when st_dwithin(st_startpoint(line), area, 1) then 1 else radius[1] end,
+                 case when st_dwithin(st_endpoint(line), area, 1) then 1 else radius[2] end];
 end;
 $$ language plpgsql;
 
 
-
-create function reuse_terminal(point geometry, terminals geometry, line geometry) returns geometry as $$
-declare
-    max_buffer float;
+create function track_objects(pi integer array, pt char(1), op text) returns jsonb
+as $$
 begin
-    max_buffer = least(st_length(line) / 3.0, 50.0);
-    if st_geometrytype(terminals) = 'ST_MultiPolygon' then
-        if st_distance(st_geometryn(terminals, 1), point) < 1 then
-            return st_geometryn(terminals, 1);
-        elsif st_distance(st_geometryn(terminals, 2), point) < 1 then
-            return st_geometryn(terminals, 2);
-        else
-            return st_buffer(point, max_buffer);
-        end if;
-    else
-        return st_buffer(point, max_buffer);
-    end if;
-end;
-$$ language plpgsql;
-
-create function minimal_terminals(line geometry, area geometry, terminals geometry) returns geometry as $$
-declare
-    start_term geometry;
-    end_term   geometry;
-begin
-    start_term = case when st_distance(st_startpoint(line), area) < 1 then st_buffer(st_startpoint(line), 1)
-                      else reuse_terminal(st_startpoint(line), terminals, line) end;
-    end_term   = case when st_distance(st_endpoint(line), area) < 1 then st_buffer(st_endpoint(line), 1)
-                      else reuse_terminal(st_endpoint(line), terminals, line) end;
-    return st_union(start_term, end_term);
+    return json_build_object(op, to_json(array(select objects from osm_objects where power_id = any(pi) and power_type = pt)))::jsonb;
 end;
 $$ language plpgsql;
 

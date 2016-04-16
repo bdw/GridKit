@@ -58,8 +58,8 @@ insert into node_merged_lines (line_id, way_id, extent)
     select nextval('line_id'), array_agg(v), e
         from node_line_set group by k, e;
 
-insert into power_line (line_id, power_name, extent, terminals)
-    select line_id, 'merged', extent, buffered_terminals(extent)
+insert into power_line (line_id, power_name, extent, radius)
+    select line_id, 'merged', extent, default_radius(extent)
         from node_merged_lines;
 
 insert into osm_objects (power_id, power_type, objects)
