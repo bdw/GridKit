@@ -30,17 +30,23 @@ end;
 $$ language plpgsql;
 
 
-
 create function electric_structure_from_tags(o text) returns electric_structure array
 as $$
-declare
-    t electric_tags;
-    e electric_structure array;
-    n integer;
 begin
-     select * into t from electric_tags where osm_name = o;
-     return null;
+     return array(select row(v, f, c, w, 1, 0) from (
+          select case when voltage is not null then unnest(voltage) end,
+                 case when frequency is not null then unnest(frequency) end,
+                 case when cables is not null then unnest(cables) end,
+                 case when wires is not null then unnest(wires) end
+                 from electric_tags where osm_name = o
+          ) e (v, f, c, w)
+     );
 end;
 $$ language plpgsql;
+
+create function electric_structure_from_merge(electric_structure[][]) returns electric_structure array as $$
+
+$$ language plpgsql;
+
 
 commit;
