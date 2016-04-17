@@ -12,12 +12,8 @@ extract.
 """
 from __future__ import print_function, unicode_literals, division
 import os, sys, io, re, csv, argparse, logging, subprocess, functools, getpass, operator
-
-try:
-    import psycopg2
-    import psycopg2.extensions
-except ImportError:
-    psycopg2 = False
+from util.postgres import PgWrapper as PgClient, PSQL
+from util.which import which
 
 __author__ = 'Bart Wiegmans'
 
@@ -25,160 +21,7 @@ if sys.version_info >= (3,0):
     raw_input = input
 
 
-def which(program):
-    '''Find executable for a given name by PATH, or None if no executable could be found'''
-    if os.name == 'nt':
-        return _nt_which(program)
-    elif os.name == 'posix':
-        return _posix_which(program)
-    raise NotImplementedError(os.platform)
 
-def _nt_which(program):
-    PATH = os.environ['PATH'].split(os.pathsep)
-    EXT  = os.environ['PATHEXT'].split(os.pathsep)
-    name, ext = os.path.splitext(program)
-    if ext in EXT:
-        # program is specified as foo.exe, for example, in which case
-        # we don't go looking for foo.exe.exe or foo.exe.bat
-        for p in PATH:
-            n = os.path.join(p, program)
-            if os.path.isfile(n):
-                return n
-    else:
-        for p in PATH:
-            for e in EXT:
-                n = os.path.join(p, program + e)
-                if os.path.isfile(n):
-                    return n
-    return None
-
-def _posix_which(program):
-    PATH = os.environ['PATH'].split(os.pathsep)
-    for p in PATH:
-        n = os.path.join(p, program)
-        if os.path.isfile(n) and os.access(n, os.X_OK):
-            return n
-    return None
-
-class QueryError(Exception):
-    def __init__(self, error, query):
-        super(QueryError, self).__init__(error)
-        self.query = query
-
-def make_copy_query(subquery_or_table):
-    if subquery_or_table.lower().startswith('select'):
-        query = 'COPY ({0}) TO STDOUT WITH CSV HEADER'
-    else:
-        query = 'COPY {0} TO STDOUT WITH CSV HEADER'
-    return query.format(subquery_or_table)
-
-
-class PsqlWrapper(object):
-    "Wrap psql client executable under subprocess"
-    def check_connection(self):
-        try:
-            self.do_query('SELECT 1')
-        except QueryError as e:
-            return False
-        else:
-            return True
-
-    def update_params(self, params):
-        for n,v in params.items():
-            k = 'PG' + n.upper()
-            os.environ[k] = str(v)
-
-    def do_createdb(self, database_name):
-        self.do_query('CREATE DATABASE {0}'.format(database_name))
-
-    def do_query(self, query):
-        try:
-            subprocess.check_call([PSQL, '-v', 'ON_ERROR_STOP=1', '-c', query])
-        except subprocess.CalledProcessError as e:
-            raise QueryError(e, query)
-        except OSError as e:
-            raise Exception(e)
-
-    def do_queryfile(self, queryfile):
-        try:
-            subprocess.check_call([PSQL, '-v', 'ON_ERROR_STOP=1', '-f', queryfile])
-        except subprocess.CalledProcessError as e:
-            raise QueryError(e, queryfile)
-        except OSError as e:
-            raise Exception(e)
-
-    def do_getcsv(self, subquery_or_table, io_handle):
-        query = make_copy_query(subquery_or_table)
-        try:
-            command = [PSQL, '-v', 'ON_ERROR_STOP=1', '-c', query]
-            try:
-                subprocess.check_call(command, stdout=io_handle)
-            except io.UnsupportedOperation as e:
-                io_handle.write(subprocess.check_output(command).decode('utf-8'))
-        except subprocess.CalledProcessError as e:
-            raise QueryError(e, subquery_or_table)
-        except OSError as e:
-            raise Exception(e)
-
-
-class Psycopg2Wrapper(object):
-    "Wrap psycopg2 for consistency with psql-wrapper"
-    def __init__(self):
-        self._connection = None
-        self._params     = dict()
-
-    def update_params(self, params):
-        if self._connection is not None:
-            # close existing connection
-            if not self._connection.closed:
-                self._connection.close()
-            self._connection = None
-        self._params.update(**params)
-
-    def check_connection(self):
-        try:
-            if self._connection is None:
-                self._connection = psycopg2.connect(**self._params)
-        except (TypeError, psycopg2.Error) as e:
-            return False
-        else:
-            return True
-
-    def do_createdb(self, database_name):
-        self._connection.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_AUTOCOMMIT)
-        self.do_query('CREATE DATABASE {0};'.format(database_name))
-
-    def do_query(self, query):
-        try:
-            with self._connection as con:
-                with con.cursor() as cursor:
-                    cursor.execute(query)
-        except psycopg2.Error as e:
-            raise QueryError(e, query)
-
-    def do_queryfile(self, queryfile):
-        with io.open(queryfile, 'r', encoding='utf-8') as handle:
-            query = handle.read()
-        self.do_query(query)
-
-    def do_getcsv(self, subquery_or_table, io_handle):
-        query  = make_copy_query(subquery_or_table)
-        try:
-            with self._connection.cursor() as cursor:
-                cursor.copy_expert(query, io_handle)
-        except psycopg2.Error as e:
-            raise QueryError(e, query)
-
-
-
-
-class PgWrapper(Psycopg2Wrapper if psycopg2 else PsqlWrapper):
-    '''
-Wrap interfaces of either psycopg2 or psql-under-subprocess
-Which of these is actually implemented depends on the runtime
-environment; psycopg2 is given preference, but psql is a fallback.
-'''
-    pass
 
 def ask(question, default=None, type=str):
     if default is not None:
@@ -252,30 +95,39 @@ def do_conversion(pg_client, voltage_cutoff=220000):
     pg_client.do_queryfile(f('prepare-tables.sql'))
 
     # shared node algorithms
-    logging.info("Shared-node algorithms running")
+    logging.info("Shared-node algorithms started")
     pg_client.do_queryfile(f('node-1-find-shared.sql'))
     pg_client.do_queryfile(f('node-2-merge-lines.sql'))
     pg_client.do_queryfile(f('node-3-line-joints.sql'))
     logging.info("Shared-node algorithms finished")
 
     # spatial algorithms
-    logging.info("Spatial algorithms running")
+    logging.info("Spatial algorithms started")
     pg_client.do_queryfile(f('spatial-1-merge-stations.sql'))
-    pg_client.do_queryfile(f('spatial-2-eliminate-internal-lines.sql'))
-    pg_client.do_queryfile(f('spatial-3-eliminate-line-overlap.sql'))
-    pg_client.do_queryfile(f('spatial-4-attachment-joints.sql'))
-    pg_client.do_queryfile(f('spatial-5a-line-terminal-intersections.sql'))
-    pg_client.do_queryfile(f('spatial-5b-mutual-terminal-intersections.sql'))
-    pg_client.do_queryfile(f('spatial-5c-joint-stations.sql'))
+    pg_client.do_queryfile(f('spatial-2-eliminate-line-overlap.sql'))
+    pg_client.do_queryfile(f('spatial-3-attachment-joints.sql'))
+    pg_client.do_queryfile(f('spatial-4-terminal-intersections.sql'))
+    pg_client.do_queryfile(f('spatial-5-terminal-joints.sql'))
     pg_client.do_queryfile(f('spatial-6-merge-lines.sql'))
     logging.info("Spatial algorithms finished")
 
     # topological algoritms
-    logging.info("Topological algorithms running")
+    logging.info("Topological algorithms started")
     pg_client.do_queryfile(f('topology-1-connections.sql'))
-    pg_client.do_queryfile(f('topology-2a-dangling-joints.sql'))
-    pg_client.do_queryfile(f('topology-2b-redundant-splits.sql'))
-    pg_client.do_queryfile(f('topology-2c-redundant-joints.sql'))
+    pg_client.do_queryfile(f('topology-2-dangling-joints.sql'))
+    pg_client.do_queryfile(f('topology-3-redundant-splits.sql'))
+    pg_client.do_queryfile(f('topology-4-redundant-joints.sql'))
+    logging.info("Topological algorithms finished")
+
+    logging.info("Electric algorithms started")
+    pg_client.do_queryfile(f('electric-1-tags.sql'))
+    pg_client.do_queryfile(f('electric-2-patch.sql'))
+    pg_client.do_queryfile(f('electric-3-compute.sql'))
+
+    pg_client.do_queryfile(f('electric-4-reference.sql'))
+    logging.info("Electric algorithms finished")
+
+
     pg_client.do_queryfile(f('topology-3a-assign-tags.sql'))
     pg_client.do_queryfile(f('topology-3b-electrical-properties.sql'))
 
@@ -311,17 +163,13 @@ def file_age_cmp(a, b):
 if __name__ == '__main__':
     logging.basicConfig(format='%(levelname)s [%(asctime)s] / %(message)s', level=logging.INFO)
 
-    PSQL       = which('psql')
+
     OSM2PGSQL  = which('osm2pgsql')
     OSMCONVERT = which('osmconvert')
     OSMFILTER  = which('osmfilter')
     OSMOSIS    = which('osmosis')
     BASE_DIR   = os.path.realpath(os.path.dirname(__file__))
     POWERSTYLE = os.path.join(BASE_DIR, 'power.style')
-
-    if not psycopg2 and PSQL is None:
-        logging.error("Can't load psycopg2 or find psql executable")
-        quit(1)
 
     parse_pair = lambda s: tuple(s.split('=', 1))
     ap = argparse.ArgumentParser()
@@ -366,7 +214,7 @@ if __name__ == '__main__':
     if args.poly:
         db_params.update(database=db_params.get('user') or 'postgres')
 
-    pg_client = PgWrapper()
+    pg_client = PgClient()
     pg_client.update_params(db_params)
 
     if pg_client.check_connection():
