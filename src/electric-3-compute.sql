@@ -1,6 +1,8 @@
 begin;
-drop function if exists jsonb_first_key(v jsonb);
 drop function if exists electric_structure_from_tags(text);
+drop function if exists electric_structure_from_lateral_merge(jsonb);
+drop function if exists electric_structure_from_end_join(jsonb);
+drop function if exists electric_structure_from_object(jsonb);
 drop table if exists computed_structure;
 drop type if exists electric_structure;
 
@@ -23,12 +25,27 @@ create table computed_structure (
 );
 
 
-create function jsonb_first_key(v jsonb) returns text as $$
+
+create function electric_structure_from_object(o jsonb) returns electric_structure array as $$
 begin
-     return k from (select jsonb_object_keys(v)) t(k) limit 1;
+    return case when o ? 'source' then electric_structure_from_tags(o->>'source')
+                when o ? 'merge' then electric_structure_from_lateral_merge(o)
+                when o ? 'join'  then electric_structure_from_end_join(o)
+                when o ? 'split' then electric_structure_from_object(o->'split'->0) end;
 end;
 $$ language plpgsql;
 
+create function electric_structure_from_lateral_merge(m jsonb) returns electric_structure array as $$
+begin
+    return null;
+end;
+$$ language plpgsql;
+
+create function electric_structure_from_end_join(j jsonb) returns electric_structure array as $$
+begin
+    return null;
+end;
+$$ language plpgsql;
 
 create function electric_structure_from_tags(o text) returns electric_structure array
 as $$
@@ -43,10 +60,5 @@ begin
      );
 end;
 $$ language plpgsql;
-
-create function electric_structure_from_merge(electric_structure[][]) returns electric_structure array as $$
-
-$$ language plpgsql;
-
 
 commit;

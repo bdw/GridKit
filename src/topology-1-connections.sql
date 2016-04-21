@@ -66,12 +66,12 @@ insert into topology_nodes (station_id, line_id, station_location, topology_name
 
 
 insert into problem_lines (line_id, station_id, line_extent, line_terminals, station_area)
-     select c.line_id, c.station_id, extent, t.terminals,
+     select c.line_id, c.station_id, extent,
+         st_multi(st_union(st_buffer(st_startpoint(extent), radius[1]), st_buffer(st_endpoint(extent), radius[2]))),
          (select st_union(area) from power_station s where station_id = any(c.station_id)) from (
               select line_id, array_agg(station_id) from topology_connections group by line_id having count(*) > 2
          ) c (line_id, station_id)
-         join power_line l on l.line_id = c.line_id
-         join power_line_terminals t on t.line_id = l.line_id;
+         join power_line l on l.line_id = c.line_id;
 
 insert into dangling_lines (line_id, extent)
     select line_id, extent from power_line where line_id not in (

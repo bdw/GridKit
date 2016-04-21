@@ -25,7 +25,7 @@ create table node_split_lines (
 
 insert into shared_nodes_joint (node_id, location, line_id)
     select s.node_id, n.point, array(
-        select power_id from osm_ids i
+        select power_id from source_ids i
              where i.osm_type = 'w' and i.osm_id = any(s.way_id)
         )
         from shared_nodes s
@@ -53,24 +53,24 @@ insert into node_split_lines (new_id, old_id, segment, points)
            from node_joint_lines;
 
 -- create joints power stations, start with ids for osm id
-insert into osm_ids (osm_type, osm_id, osm_name, power_type, power_id)
+insert into source_ids (osm_type, osm_id, source_id, power_type, power_id)
     select 'n', node_id, concat('n', node_id), 's', nextval('station_id')
         from shared_nodes_joint;
 
 insert into power_station (station_id, power_name, location, area)
     select i.power_id, 'joint', j.location, st_buffer(j.location, 1)
         from shared_nodes_joint j
-        join osm_ids i on i.osm_type = 'n' and i.osm_id = j.node_id;
+        join source_ids i on i.osm_type = 'n' and i.osm_id = j.node_id;
 
 -- source objects are combination of lines and the node itself - we'll need to register the node
-insert into osm_objects (power_id, power_type, objects)
+insert into source_objects (power_id, power_type, objects)
     select i.power_id, 's', json_build_object('merge', array(
-            select objects from osm_objects where power_id = any(line_id) and power_type = 'l'
+            select objects from source_objects where power_id = any(line_id) and power_type = 'l'
             union all
-            select to_json(i.osm_name)::jsonb
+            select json_build_object('source', i.source_id)::jsonb
         ))::jsonb
         from shared_nodes_joint j
-        join osm_ids i on i.osm_type = 'n' and i.osm_id = j.node_id;
+        join source_ids i on i.osm_type = 'n' and i.osm_id = j.node_id;
 
 -- replacement power lines
 insert into power_line (line_id, power_name, extent, radius)
@@ -79,7 +79,7 @@ insert into power_line (line_id, power_name, extent, radius)
         from node_split_lines s
         join power_line l on l.line_id = s.old_id;
 
-insert into osm_objects (power_id, power_type, objects)
+insert into source_objects (power_id, power_type, objects)
     select new_id, 'l', track_objects(array[old_id], 'l', 'split')
         from node_split_lines;
 

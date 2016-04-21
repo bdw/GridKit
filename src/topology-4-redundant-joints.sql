@@ -98,7 +98,7 @@ insert into joint_cyclic_edges (extent, line_id)
         where array_length(s,1) is null
         group by k,e;
 
-insert into osm_objects (power_id, power_type, objects)
+insert into source_objects (power_id, power_type, objects)
     select new_id, 'l', track_objects(old_id, 'l', 'merge') from joint_merged_edges;
 
 insert into topology_edges (line_id, station_id, line_extent, direct_line)

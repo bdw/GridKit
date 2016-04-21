@@ -6,7 +6,7 @@ drop function if exists string_to_float_array(text,text);
 drop function if exists number_of_wires(text);
 
 create table electric_tags (
-    osm_name varchar(64) primary key,
+    source_id varchar(64) primary key,
     power_name varchar(64) not null,
     voltage integer array,
     frequency float array,
@@ -86,12 +86,12 @@ end;
 $$ language plpgsql;
 
 
-insert into electric_tags (osm_name, power_name, voltage, frequency, cables, wires)
-   select osm_name, tags->'power',
+insert into electric_tags (source_id, power_name, voltage, frequency, cables, wires)
+   select source_id, tags->'power',
           string_to_integer_array(tags->'voltage',';'),
           string_to_float_array(tags->'frequency',';'),
           string_to_integer_array(tags->'cables',';'),
           number_of_wires(tags->'wires')
-       from osm_tags;
+       from source_tags;
 
 commit;

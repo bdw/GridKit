@@ -46,11 +46,17 @@ insert into power_station (station_id, power_name, location, area)
         from terminal_joints;
 
 update power_line l
-   set extent = j.new_extent,
-       radius = minimal_radius(j.new_extent, j.locations, l.radius)
-       from extended_lines j where j.line_id = l.line_id;
+   set extent = j.new_extent
+   from extended_lines j where j.line_id = l.line_id;
 
-insert into osm_objects (power_id, power_type, objects)
+update power_line l
+   set radius = minimal_radius(l.extent, t.locations, l.radius) from (
+        select line_id, st_union(location) from (
+            select unnest(line_id), location from terminal_joints
+        ) f (line_id, location) group by line_id
+   ) t (line_id, locations) where t.line_id = l.line_id;
+
+insert into source_objects (power_id, power_type, objects)
     select station_id, 's', track_objects(line_id, 'l', 'merge') from terminal_joints;
 
 commit;

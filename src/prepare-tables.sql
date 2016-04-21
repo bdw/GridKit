@@ -1,6 +1,5 @@
 /* assume we use the osm2pgsql 'accidental' tables */
 begin transaction;
-drop view if exists power_line_terminals;
 drop table if exists node_geometry;
 drop table if exists way_geometry;
 drop table if exists relation_member;
@@ -10,9 +9,11 @@ drop table if exists electrical_properties;
 
 drop table if exists power_station;
 drop table if exists power_line;
-drop table if exists osm_ids;
-drop table if exists osm_tags;
-drop table if exists osm_objects;
+
+drop table if exists source_ids;
+drop table if exists source_tags;
+drop table if exists source_objects;
+
 drop sequence if exists line_id;
 drop sequence if exists station_id;
 
@@ -29,33 +30,30 @@ create table way_geometry (
     line   geometry(linestring, 3857)
 );
 
-
-create table osm_ids (
-    osm_name varchar(64) primary key,
+-- implementation of source_ids and source_tags table will depend on the data source used
+create table source_ids (
+    source_id varchar(64) primary key,
     osm_id   bigint not null,
     osm_type char(1) not null,
     power_id integer not null,
     power_type char(1) not null
 );
 
-
-
 -- both ways lookups
-create index osm_ids_osm_idx   on osm_ids (osm_type, osm_id);
-create index osm_ids_power_idx on osm_ids (power_type, power_id);
+create index source_ids_osm_idx   on source_ids (osm_type, osm_id);
+create index source_ids_power_idx on source_ids (power_type, power_id);
 
-create table osm_tags (
-    osm_name varchar(64) primary key,
-    tags    hstore
+create table source_tags (
+    source_id varchar(64) primary key,
+    tags      hstore
 );
 
-create table osm_objects (
+create table source_objects (
     power_id integer,
     power_type char(1),
     objects  jsonb,
     primary key (power_id, power_type)
 );
-
 
 
 /* lookup table for power types */
@@ -161,21 +159,21 @@ insert into relation_member (relation_id, member_id, member_role)
     ) s;
 
 -- identify objects as lines or stations
-insert into osm_ids (osm_id, osm_type, osm_name, power_id, power_type)
+insert into source_ids (osm_id, osm_type, source_id, power_id, power_type)
     select id, 'n', concat('n', id), nextval('station_id'), 's'
         from planet_osm_nodes n
         join power_type_names t
         on hstore(n.tags)->'power' = t.power_name
         and t.power_type = 's';
 
-insert into osm_ids (osm_id, osm_type, osm_name, power_id, power_type)
+insert into source_ids (osm_id, osm_type, source_id, power_id, power_type)
     select id, 'w', concat('w', id), nextval('station_id'), 's'
         from planet_osm_ways n
         join power_type_names t
         on hstore(n.tags)->'power' = t.power_name
         and t.power_type = 's';
 
-insert into osm_ids (osm_id, osm_type, osm_name, power_id, power_type)
+insert into source_ids (osm_id, osm_type, source_id, power_id, power_type)
     select id, 'w', concat('w', id), nextval('line_id'), 'l'
         from planet_osm_ways n
         join power_type_names t
@@ -184,7 +182,7 @@ insert into osm_ids (osm_id, osm_type, osm_name, power_id, power_type)
 
 insert into power_station (station_id, power_name, location, area)
      select i.power_id, hstore(n.tags)->'power', ng.point, buffered_station_point(ng.point)
-          from osm_ids i
+          from source_ids i
           join planet_osm_nodes n on n.id = i.osm_id
           join node_geometry ng on  ng.node_id = i.osm_id
           where i.power_type = 's' and i.osm_type = 'n';
@@ -193,40 +191,33 @@ insert into power_station (station_id, power_name, location, area)
      select i.power_id, hstore(w.tags)->'power',
             st_centroid(wg.line),
             buffered_station_area(way_station_area(wg.line))
-          from osm_ids i
+          from source_ids i
           join planet_osm_ways w on w.id = i.osm_id
           join way_geometry wg   on wg.way_id = i.osm_id
           where i.power_type = 's' and i.osm_type = 'w';
 
 insert into power_line (line_id, power_name, extent, radius)
     select i.power_id, hstore(w.tags)->'power', wg.line, default_radius(wg.line)
-        from osm_ids i
+        from source_ids i
         join planet_osm_ways w on w.id = i.osm_id
         join way_geometry wg on wg.way_id = i.osm_id
         where i.power_type = 'l';
 
 -- setup object and tag tracking
-insert into osm_tags (osm_name, tags)
-    select i.osm_name, hstore(n.tags)
-        from osm_ids i
+insert into source_tags (source_id, tags)
+    select i.source_id, hstore(n.tags)
+        from source_ids i
         join planet_osm_nodes n on n.id = i.osm_id
         where i.osm_type = 'n';
 
-insert into osm_tags (osm_name, tags)
-    select i.osm_name, hstore(w.tags)
-           from osm_ids i
-           join planet_osm_ways w on w.id = i.osm_id
-           where i.osm_type = 'w';
+insert into source_tags (source_id, tags)
+    select i.source_id, hstore(w.tags)
+        from source_ids i
+        join planet_osm_ways w on w.id = i.osm_id
+        where i.osm_type = 'w';
 
-insert into osm_objects (power_id, power_type, objects)
-     select power_id, power_type, to_json(osm_name)::jsonb
-         from osm_ids;
-
--- for visualization
-create view power_line_terminals (line_id, terminals) as
-    select line_id, st_multi(st_union(st_buffer(st_startpoint(extent), radius[1]),
-                                      st_buffer(st_endpoint(extent), radius[2])))
-           from power_line;
-
+insert into source_objects (power_id, power_type, objects)
+     select power_id, power_type, json_build_object('source', source_id)::jsonb
+         from source_ids;
 
 commit;

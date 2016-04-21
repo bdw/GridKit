@@ -101,7 +101,7 @@ $$ language plpgsql;
 create function track_objects(pi integer array, pt char(1), op text) returns jsonb
 as $$
 begin
-    return json_build_object(op, to_json(array(select objects from osm_objects where power_id = any(pi) and power_type = pt)))::jsonb;
+    return json_build_object(op, to_json(array(select objects from source_objects where power_id = any(pi) and power_type = pt)))::jsonb;
 end;
 $$ language plpgsql;
 
