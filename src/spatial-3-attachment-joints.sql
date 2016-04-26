@@ -43,6 +43,7 @@ insert into line_attachments (extent_id, attach_id, extent, terminal, attachment
        join power_line b on st_dwithin(a.extent, st_startpoint(b.extent), b.radius[1])
         and not (st_dwithin(st_startpoint(a.extent), st_startpoint(b.extent), b.radius[1])
               or st_dwithin(st_endpoint(a.extent), st_startpoint(b.extent), b.radius[1]))
+        and not exists (select 1 from power_station s where st_dwithin(s.area, st_startpoint(b.extent), b.radius[1]))
         order by b.line_id, st_distance(a.extent, st_startpoint(b.extent)) asc;
 
 -- endpoint attachments
@@ -52,6 +53,7 @@ insert into line_attachments (extent_id, attach_id, extent, terminal, attachment
        join power_line b on st_dwithin(a.extent, st_endpoint(b.extent), b.radius[2])
         and not (st_dwithin(st_startpoint(a.extent), st_endpoint(b.extent), b.radius[2])
               or st_dwithin(st_endpoint(a.extent), st_endpoint(b.extent), b.radius[2]))
+        and not exists (select 1 from power_station s where st_dwithin(s.area, st_endpoint(b.extent), b.radius[2]))
         order by b.line_id, st_distance(a.extent, st_endpoint(b.extent)) asc;
 
 -- Create segments for the split line
