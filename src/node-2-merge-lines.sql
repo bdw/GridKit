@@ -64,7 +64,7 @@ insert into power_line (line_id, power_name, extent, radius)
 
 insert into source_objects (power_id, power_type, objects)
     select line_id, 'l', json_build_object('join', array(
-        select source_id from source_ids i where i.osm_id = any(m.way_id) and i.osm_type = 'w'
+        select json_build_object('source', source_id)::jsonb from source_ids i where i.osm_id = any(m.way_id) and i.osm_type = 'w'
     ))::jsonb
     from node_merged_lines m;
 
