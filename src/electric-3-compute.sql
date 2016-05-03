@@ -1,15 +1,15 @@
 begin;
-drop function if exists electric_structure_from_tags(text);
-drop function if exists electric_structure_from_lateral_merge(jsonb);
-drop function if exists electric_structure_from_end_join(jsonb);
-drop function if exists electric_structure_from_object(jsonb);
-drop function if exists electric_structure_classify(electric_structure array, integer);
-drop function if exists electric_structure_distance(electric_structure, electric_structure);
-drop function if exists electric_structure_majority(electric_structure array);
-drop table if exists computed_structure;
-drop type if exists electric_structure;
+drop function if exists line_structure_from_source(text);
+drop function if exists line_structure_from_lateral_merge(jsonb);
+drop function if exists line_structure_from_end_join(jsonb);
+drop function if exists line_structure_from_object(jsonb);
+drop function if exists line_structure_classify(line_structure array, integer);
+drop function if exists line_structure_distance(line_structure, line_structure);
+drop function if exists line_structure_majority(line_structure array);
+drop table if exists computed_line_structure;
+drop type if exists line_structure;
 
-create type electric_structure as (
+create type line_structure as (
     -- properties
     voltage integer,
     frequency float,
@@ -18,53 +18,51 @@ create type electric_structure as (
     -- counts
     num_objects integer,
     num_conflicts integer array[4],
-    num_stripes integer
+    num_classes integer
 );
 
-create table computed_structure (
-    power_id integer not null,
-    power_type char(1),
-    power_structure electric_structure,
-    primary key(power_id, power_type)
+create table computed_line_structure (
+    line_id integer primary key,
+    line_structure line_structure
 );
 
 
 
-create function electric_structure_from_object(o jsonb) returns electric_structure array as $$
+create function line_structure_from_object(o jsonb) returns line_structure array as $$
 begin
 --    raise notice 'electric structure from object %', o::text;
-    return case when o ? 'source' then electric_structure_from_tags(o->>'source')
-                when o ? 'merge' then electric_structure_from_lateral_merge(o)
-                when o ? 'join'  then electric_structure_from_end_join(o)
-                when o ? 'split' then electric_structure_from_object(o->'split'->0) end;
+    return case when o ? 'source' then line_structure_from_source(o->>'source')
+                when o ? 'merge'  then line_structure_from_lateral_merge(o)
+                when o ? 'join'   then line_structure_from_end_join(o)
+                when o ? 'split'  then line_structure_from_object(o->'split'->0) end;
 end;
 $$ language plpgsql;
 
-create function electric_structure_from_lateral_merge(m jsonb) returns electric_structure array as $$
+create function line_structure_from_lateral_merge(m jsonb) returns line_structure array as $$
 begin
-    return null;
+    return array(select unnest(line_structure_from_object(o)) from jsonb_array_elements(j->'merge') ar(o));
 end;
 $$ language plpgsql;
 
-create function electric_structure_from_end_join(j jsonb) returns electric_structure array as $$
+create function line_structure_from_end_join(j jsonb) returns line_structure array as $$
 declare
-    raw electric_structure array;
-    num_stripes integer;
+    raw_data line_structure array;
+    num_classes integer;
+    stripe_class integer[][];
 begin
 --    raise notice 'electric structure from end join on %', j::text;
-    raw = array(select unnest(electric_structure_from_object(o)) from jsonb_array_elements(j->'join') ar(o));
-    num_stripes = max((e).num_stripes) from unnest(raw) as e;
-    if num_stripes > 1 then
+    raw_data = array(select unnest(line_structure_from_object(o)) from jsonb_array_elements(j->'join') ar(o));
+    num_classes = max((e).num_classes) from unnest(raw_data) as e;
+    if num_classes > 1 then
         raise notice 'implement classification!';
     end if;
-    return raw;
+    return raw_data;
 end;
 $$ language plpgsql;
 
-create function electric_structure_from_tags(o text) returns electric_structure array
+create function line_structure_from_source(o text) returns line_structure array
 as $$
 begin
---     raise notice 'electric structure from tags on %', o;
      return array(select row(v, f, c, w, 1, array[0,0,0,0], s) from (
           select case when voltage is not null then unnest(voltage) end,
                  case when frequency is not null then unnest(frequency) end,
@@ -77,60 +75,67 @@ begin
 end;
 $$ language plpgsql;
 
-create function electric_structure_majority(source_data electric_structure array) returns electric_structure as $$
+create function line_structure_majority(data_array line_structure array) returns line_structure as $$
 declare
-    r electric_structure;
+    r line_structure;
 begin
-    with t(e) as (select unnest(source_data)),
+    with raw_data (voltage, frequency, cables, wires, num_objects, num_conflicts, num_classes) as (select (e).* from unnest(data_array) e),
     cnt( c_t, c_v, c_f, c_c, c_w, n_s ) as (
-        select sum((e).num_objects),
-               coalesce(sum((e).num_objects) filter (where (e).voltage is not null), 0),
-               coalesce(sum((e).num_objects) filter (where (e).frequency is not null), 0),
-               coalesce(sum((e).num_objects) filter (where (e).cables is not null), 0),
-               coalesce(sum((e).num_objects) filter (where (e).wires is not null), 0),
-               max((e).num_stripes)
-          from t
+        select sum(num_objects),
+               coalesce(sum(num_objects) filter (where voltage is not null), 0),
+               coalesce(sum(num_objects) filter (where frequency is not null), 0),
+               coalesce(sum(num_objects) filter (where cables is not null), 0),
+               coalesce(sum(num_objects) filter (where wires is not null), 0),
+               max(num_stripes)
+          from raw_data
     ),
     vlt(voltage, conflicts) as (
-        select (e).voltage, c_v - sum((e).num_objects) + sum((e).num_conflicts[1]) from t, cnt
-            group by (e).voltage, c_v
-            order by c_v - sum((e).num_objects) + sum((e).num_conflicts[1]), (e).voltage
-            limit 1
+        select voltage, c_v - score from (
+             select voltage, sum(num_objects) - sum(num_conflicts[1])
+               from raw_data
+           group by voltage
+        ) _t (voltage, score), cnt
+        order by voltage is not null desc, score desc, voltage asc limit 1
     ),
     frq(frequency, conflicts) as (
-        select (e).frequency, c_f - sum((e).num_objects) + sum((e).num_conflicts[2]) from t, cnt
-            group by (e).frequency, c_f
-            order by c_f - sum((e).num_objects) + sum((e).num_conflicts[2]), (e).frequency
-            limit 1
+        select frequency, c_f - score from (
+             select frequency, sum(num_objects) - sum(num_conflicts[1])
+               from raw_data
+           group by frequency
+        ) _t (frequency, score), cnt
+        order by frequency is not null desc, score desc, frequency asc limit 1
     ),
     cbl(cables, conflicts) as (
-        select (e).cables, c_c - sum((e).num_objects) + sum((e).num_conflicts[2]) from t, cnt
-            group by (e).cables, c_c
-            order by c_c - sum((e).num_objects) + sum((e).num_conflicts[2]), (e).cables
-            limit 1
+        select cables, c_c - score from (
+             select cables, sum(num_objects) - sum(num_conflicts[1])
+               from raw_data
+           group by cables
+        ) _t (cables, score), cnt
+        order by cables is not null desc, score desc, cables asc limit 1
     ),
     wrs(wires, conflicts) as (
-        select (e).wires, c_w - sum((e).num_objects) + sum((e).num_conflicts[2]) from t, cnt
-            group by (e).wires, c_w
-            order by c_w - sum((e).num_objects) + sum((e).num_conflicts[2]), (e).wires
-            limit 1
+        select wires, c_w - score from (
+             select wires, sum(num_objects) - sum(num_conflicts[1])
+               from raw_data
+           group by wires
+        ) _t (wires, score), cnt
+        order by wires is not null desc, score desc, wires asc limit 1
     )
     select vlt.voltage, frq.frequency, cbl.cables, wrs.wires, c_t,
            array[vlt.conflicts, frq.conflicts, cbl.conflicts, wrs.conflicts], n_s
-           into r
-           from vlt, frq, cbl, wrs, cnt;
+      into r
+      from vlt, frq, cbl, wrs, cnt;
     return r;
 end;
 $$ language plpgsql;
 
-create function electric_structure_classify(raw_data electric_structure array, num_classes integer) returns integer[][] as $$
+create function line_structure_classify(raw_data line_structure array, num_classes integer) returns integer[][] as $$
 begin
-    -- TODO implement minimum-cost-spanning tree; implement cost-function
     return null;
 end;
 $$ language plpgsql;
 
-create function electric_structure_distance(a electric_structure, b electric_structure) returns numeric as $$
+create function line_structure_distance(a line_structure, b line_structure) returns numeric as $$
 begin
     return case when a.voltage is null or b.voltage is null then 1
                 when a.voltage = b.voltage then 0

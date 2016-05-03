@@ -211,13 +211,13 @@ insert into source_tags (source_id, tags)
         where i.osm_type = 'n';
 
 insert into source_tags (source_id, tags)
-    select i.source_id, hstore(w.tags)
-        from source_ids i
-        join planet_osm_ways w on w.id = i.osm_id
-        where i.osm_type = 'w';
+     select i.source_id, hstore(w.tags)
+       from source_ids i
+       join planet_osm_ways w on w.id = i.osm_id
+      where i.osm_type = 'w';
 
 insert into source_objects (power_id, power_type, objects)
      select power_id, power_type, json_build_object('source', source_id)::jsonb
-         from source_ids;
+       from source_ids;
 
 commit;
