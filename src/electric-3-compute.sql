@@ -27,10 +27,8 @@ create table computed_line_structure (
 );
 
 
-
 create function line_structure_from_object(o jsonb) returns line_structure array as $$
 begin
---    raise notice 'electric structure from object %', o::text;
     return case when o ? 'source' then line_structure_from_source(o->>'source')
                 when o ? 'merge'  then line_structure_from_lateral_merge(o)
                 when o ? 'join'   then line_structure_from_end_join(o)
@@ -60,8 +58,7 @@ begin
 end;
 $$ language plpgsql;
 
-create function line_structure_from_source(o text) returns line_structure array
-as $$
+create function line_structure_from_source(o text) returns line_structure array as $$
 begin
      return array(select row(v, f, c, w, 1, array[0,0,0,0], s) from (
           select case when voltage is not null then unnest(voltage) end,
@@ -129,11 +126,6 @@ begin
 end;
 $$ language plpgsql;
 
-create function line_structure_classify(raw_data line_structure array, num_classes integer) returns integer[][] as $$
-begin
-    return null;
-end;
-$$ language plpgsql;
 
 create function line_structure_distance(a line_structure, b line_structure) returns numeric as $$
 begin
@@ -156,6 +148,68 @@ begin
                 when a.wires = b.wires then 0
                 when least(a.wires, b.wires) = 0 then 2
                 else greatest(a.wires, b.wires) / least(a.wires, b.wires) end;
+end;
+$$ language plpgsql;
+
+
+
+-- temporary table and sequence used for classification algorithm
+drop table if exists line_structure_classes;
+create table line_structure_classes (
+    run_key integer,
+    structure_key integer,
+    class_key integer,
+    primary key (run_key, structure_key)
+);
+
+create index line_structure_class_key_idx
+          on line_structure_classes (run_key, class_key);
+drop sequence if exists line_structure_classify_run_key;
+create sequence line_structure_classify_run_key;
+
+
+create function line_structure_classify (raw_data line_structure array, num_classes integer) returns integer[][] as $$
+declare
+    my_run_key integer;
+    edge record;
+    src_key integer;
+    dst_key integer;
+    num_edges integer;
+begin
+    num_edges  = 0;
+    my_run_key = nextval('line_structure_classify_run_key');
+    insert into line_structure_classes (run_key, structure_key, class_key)
+         select my_run_key, i, i
+           from generate_subscripts(raw_data) _t(i);
+    for edge in with pairs (src, dst, cost) as (
+        select distinct least(i, j), greatest(i,j),
+               line_structure_distance(raw_data[i], raw_data[j])
+          from generate_subscripts(raw_data) _t(i),
+               generate_subscripts(raw_data) _s(j)
+         where i != j
+      order by line_structure_distance(raw_data[i], raw_data[j]) asc
+    ) select * from pair_cost loop
+        src_key := class_key from line_structure_classes c
+                            where run_key = my_run_key
+                              and structure_key = edge.src;
+        dst_key := class_key from line_structure_classes c
+                            where run_key = my_run_key
+                              and structure_key = edge.dst;
+        if src_key = dst_key then
+            continue;
+        elsif num_edges + num_classes = array_length(raw_data, 1) then
+            exit;
+        else
+            update line_structure_classes
+               set class_key = least(src_key, dst_key)
+             where run_key = my_run_key
+               and class_key = greatest(src_key, dst_key);
+        end if;
+    end loop;
+    return array(select array_agg(structure_key)
+                   from line_structure_classes c
+                  where run_key = my_run_key
+               group by class_key);
 end;
 $$ language plpgsql;
 
