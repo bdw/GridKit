@@ -45,6 +45,7 @@ insert into links (l_id, v_id_1, v_id_2, name,
             -- approximate the wires
             case when c.voltage < 200 then 1
                  when c.voltage < 300 then 2
+                 when c.voltage = 300 then 3
                  else 4 end,
             -- line lengths according to ENTSO-E are prefered... although probably inaccurate
             case when c.length_m > 0 then c.length_m
