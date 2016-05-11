@@ -25,6 +25,7 @@ create table source_line_properties (
     frequency integer,
     voltage integer,
     circuits integer,
+    length_m numeric,
     under_construction boolean,
     underground boolean
 );
@@ -34,6 +35,7 @@ create table computed_line_properties (
     voltage integer,
     frequency integer,
     circuits integer,
+    length_m numeric,
     under_construction boolean,
     underground boolean
 );
@@ -58,11 +60,12 @@ insert into source_station_properties (import_id, symbol, name, capacity, under_
             from features f where st_geometrytype(f.geometry) = 'ST_Point';
 
 insert into source_line_properties
-       (import_id, name, frequency, voltage, circuits, under_construction, underground)
+       (import_id, name, frequency, voltage, circuits, length_m, under_construction, underground)
     select import_id, properties->'text_',
            case when substring(properties->'symbol', 1, 7) = 'DC-Line' then 0 else 50 end,
            substring(properties->'voltagelevel' from '^[0-9]+')::int,
            (properties->'numberofcircuits')::int,
+           (properties->'shape_length')::numeric,
            (properties->'underconstruction')::bool,
            (properties->'underground')::bool
            from features f where st_geometrytype(f.geometry) = 'ST_LineString';
@@ -79,7 +82,7 @@ $$ language plpgsql;
 
 create function line_properties_for_source(line_id integer, source_id text) returns computed_line_properties as $$
 begin
-     return row(line_id, voltage, frequency, circuits, under_construction, underground)
+     return row(line_id, voltage, frequency, circuits, length_m, under_construction, underground)
             from source_line_properties where import_id = source_id::integer;
 end;
 $$ language plpgsql;
@@ -92,11 +95,11 @@ declare
 begin
     raw_properties = array(select line_properties_for_object(line_id, prt) from jsonb_array_elements(obj->'join') ar(prt));
     have_conflicts = count(*) from (
-         select voltage, frequency, circuits, under_construction, underground from unnest(raw_properties) r(_line_id, voltage, frequency, circuits, under_construction, underground)
-                group by voltage, frequency, circuits, under_construction, underground
+         select distinct (e).* from unnest(raw_properties) e
     ) _g;
     if have_conflicts > 1 then
-        insert into line_properties_conflicts (line_id, conflicting_objects, conflicting_properties) values (line_id, obj->'join', raw_properties);
+        insert into line_properties_conflicts (line_id, conflicting_objects, conflicting_properties)
+               values (line_id, obj->'join', raw_properties);
     end if;
     -- TODO find and record conflicts
     return raw_properties[1];
