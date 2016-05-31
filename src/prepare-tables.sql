@@ -79,19 +79,6 @@ create table relation_member (
     member_role varchar(64) null
 );
 
-create table electrical_properties (
-    power_id integer,
-    power_type char(1),
-    frequency float array,
-    voltage int array,
-    cables int array,
-    wires int array,
-    power_name varchar(64),
-    operator text,
-    name text,
-    primary key (power_id, power_type)
-);
-
 create table power_station (
     station_id integer primary key,
     power_name varchar(64) not null,
@@ -122,6 +109,13 @@ insert into power_type_names (power_name, power_type)
            ('line', 'l'),
            ('minor_cable', 'l'),
            ('minor_line', 'l'),
+           ('minor_undeground_cable', 'l'),
+           ('generator', 'g'),
+           ('gas generator', 'g'),
+           ('wind generator', 'g'),
+           ('hydro', 'g'),
+           ('hydroelectric', 'g'),
+           ('heliostat', 'g'),
            -- virtual elements
            ('merge', 'v'),
            ('joint', 'v');
