@@ -9,6 +9,7 @@ drop table if exists electrical_properties;
 
 drop table if exists power_station;
 drop table if exists power_line;
+drop table if exists power_generator;
 
 drop table if exists source_ids;
 drop table if exists source_tags;
@@ -16,9 +17,11 @@ drop table if exists source_objects;
 
 drop sequence if exists line_id;
 drop sequence if exists station_id;
+drop sequence if exists generator_id;
 
 create sequence station_id;
 create sequence line_id;
+create sequence generator_id;
 
 create table node_geometry (
     node_id bigint primary key,
@@ -60,7 +63,7 @@ create table source_objects (
 create table power_type_names (
     power_name varchar(64) primary key,
     power_type char(1) not null,
-    check (power_type in ('s','l','r', 'v'))
+    check (power_type in ('s','l','g', 'v'))
 );
 
 create table reference_parameters (
@@ -173,6 +176,18 @@ insert into source_ids (osm_id, osm_type, source_id, power_id, power_type)
         join power_type_names t
         on hstore(n.tags)->'power' = t.power_name
         and t.power_type = 'l';
+
+insert into source_ids (osm_id, osm_type, source_id, power_id, power_type)
+    select id, 'n', concat('n', id), nextval('generator_id'), 'g'
+      from planet_osm_nodes n
+      join power_type_names t on hstore(tags)->'power' = t.power_name
+       and t.power_type = 'g';
+
+insert into source_ids (osm_id, osm_type, source_id, power_id, power_type)
+    select id, 'w', concat('w', id), nextval('generator_id'), 'g'
+      from planet_osm_ways w
+      join power_type_names t on hstore(tags)->'power' = t.power_name
+       and t.power_type = 'g';
 
 insert into power_station (station_id, power_name, location, area)
      select i.power_id, hstore(n.tags)->'power', ng.point, buffered_station_point(ng.point)
