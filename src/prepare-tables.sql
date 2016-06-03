@@ -102,6 +102,18 @@ create index power_line_extent_idx on power_line using gist(extent);
 create index power_line_startpoint_idx on power_line using gist(st_startpoint(extent));
 create index power_line_endpoint_idx on power_line using gist(st_endpoint(extent));
 
+
+create table power_generator (
+    generator_id integer primary key,
+    osm_id bigint,
+    osm_type char(1),
+    geometry geometry(geometry, 3857),
+    location geometry(point, 3857),
+    tags hstore
+);
+
+create index power_generator_location_idx on power_generator using gist(location);
+
 -- all things recognised as power objects
 insert into power_type_names (power_name, power_type)
     values ('station', 's'),
@@ -177,24 +189,29 @@ insert into source_ids (osm_id, osm_type, source_id, power_id, power_type)
         on hstore(n.tags)->'power' = t.power_name
         and t.power_type = 'l';
 
-insert into source_ids (osm_id, osm_type, source_id, power_id, power_type)
-    select id, 'n', concat('n', id), nextval('generator_id'), 'g'
-      from planet_osm_nodes n
-      join power_type_names t on hstore(tags)->'power' = t.power_name
-       and t.power_type = 'g';
+insert into power_generator (generator_id, osm_id, osm_type, geometry, location, tags)
+     select nextval('generator_id'), id, 'n', ng.point, ng.point, hstore(n.tags)
+       from planet_osm_nodes n
+       join node_geometry ng on ng.node_id = n.id
+       join power_type_names t on hstore(tags)->'power' = t.power_name
+        and t.power_type = 'g';
 
-insert into source_ids (osm_id, osm_type, source_id, power_id, power_type)
-    select id, 'w', concat('w', id), nextval('generator_id'), 'g'
-      from planet_osm_ways w
-      join power_type_names t on hstore(tags)->'power' = t.power_name
-       and t.power_type = 'g';
+insert into power_generator (generator_id, osm_id, osm_type, geometry, location, tags)
+     select nextval('generator_id'), id, 'w',
+            case when st_isclosed(wg.line) then st_makepolygon(wg.line)
+                 else wg.line end,
+            st_centroid(wg.line), hstore(w.tags)
+       from planet_osm_ways w
+       join way_geometry wg on wg.way_id = w.id
+       join power_type_names t on hstore(tags)->'power' = t.power_name
+        and t.power_type = 'g';
 
 insert into power_station (station_id, power_name, location, area)
      select i.power_id, hstore(n.tags)->'power', ng.point, buffered_station_point(ng.point)
-          from source_ids i
-          join planet_osm_nodes n on n.id = i.osm_id
-          join node_geometry ng on  ng.node_id = i.osm_id
-          where i.power_type = 's' and i.osm_type = 'n';
+       from source_ids i
+       join planet_osm_nodes n on n.id = i.osm_id
+       join node_geometry ng on  ng.node_id = i.osm_id
+      where i.power_type = 's' and i.osm_type = 'n';
 
 insert into power_station (station_id, power_name, location, area)
      select i.power_id, hstore(w.tags)->'power',
