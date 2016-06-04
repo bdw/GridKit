@@ -3,6 +3,7 @@ drop table if exists topology_connections;
 drop table if exists problem_lines;
 drop table if exists topology_edges;
 drop table if exists topology_nodes;
+drop table if exists topology_generators;
 drop table if exists dangling_lines;
 
 
@@ -39,6 +40,11 @@ create table topology_nodes (
     topology_name varchar(64)
 );
 
+create table topology_generators (
+    station_id integer not null,
+    generator_id integer not null,
+    primary key (station_id, generator_id)
+);
 
 create index topology_edges_station_id on topology_edges using gin(station_id);
 create index topology_nodes_line_id    on topology_nodes using gin(line_id);
@@ -80,5 +86,10 @@ insert into dangling_lines (line_id, extent)
        select line_id from problem_lines
    );
 
-
+insert into topology_generators (generator_id, station_id)
+     select generator_id, (select n.station_id from power_station s
+                             join topology_nodes n on n.station_id = s.station_id
+                            where n.topology_name != 'joint'
+                            order by g.location <-> s.location limit 1)
+       from power_generator g;
 commit;
