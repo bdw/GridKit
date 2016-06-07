@@ -89,7 +89,6 @@ create table power_station (
     area geometry(polygon, 3857)
 );
 
-create index power_station_locatoin_idx on power_station using gist(location);
 create index power_station_area_idx on power_station using gist (area);
 
 create table power_line (

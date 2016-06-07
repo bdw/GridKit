@@ -90,6 +90,6 @@ insert into topology_generators (generator_id, station_id)
      select generator_id, (select n.station_id from power_station s
                              join topology_nodes n on n.station_id = s.station_id
                             where n.topology_name != 'joint'
-                            order by g.location <-> s.location limit 1)
+                            order by g.location <-> s.area limit 1)
        from power_generator g;
 commit;
