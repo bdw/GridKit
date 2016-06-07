@@ -61,8 +61,8 @@ $$ language plpgsql;
 
 create function way_station_area(line geometry(linestring)) returns geometry(polygon) as $$
 begin
-     return case when st_isclosed(line) then st_makepolygon(line)
-                 when st_npoints(line) = 2 then st_buffer(line, 1)
+     return case when st_isclosed(line) and st_numpoints(line) > 3 then st_makepolygon(line)
+                 when st_numpoints(line) = 3 and st_isclosed(line) or st_numpoints(line) = 2 then st_buffer(line, 1)
                  else st_makepolygon(st_addpoint(line, st_startpoint(line))) end;
 end
 $$ language plpgsql;
