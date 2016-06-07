@@ -3,6 +3,7 @@ begin;
 drop view if exists power_line_terminals;
 drop table if exists power_station;
 drop table if exists power_line;
+drop table if exists power_generator;
 drop table if exists source_ids;
 drop table if exists source_objects;
 
@@ -60,8 +61,17 @@ create index power_line_extent_idx on power_line using gist(extent);
 create index power_line_startpoint_idx on power_line using gist(st_startpoint(extent));
 create index power_line_endpoint_idx on power_line using gist(st_endpoint(extent));
 
+create table power_generator (
+    generator_id integer primary key,
+    location geometry(point, 3857),
+    tags hstore
+);
+
+create index power_generator_location_idx on power_generator using gist(location);
+
 create sequence line_id;
 create sequence station_id;
+create sequence generator_id;
 
 create table source_ids (
     power_id integer not null,
@@ -70,14 +80,12 @@ create table source_ids (
     primary key (power_id, power_type)
 );
 
-
 create table source_objects (
     power_id integer not null,
     power_type char(1) not null,
     objects jsonb,
     primary key (power_id, power_type)
 );
-
 
 insert into source_ids (power_id, power_type, import_id)
     select nextval('station_id'), 's', import_id
@@ -94,14 +102,23 @@ insert into source_objects (power_id, power_type, objects)
 insert into power_station (station_id, power_name, location, area)
     select i.power_id, properties->'symbol', st_transform(geometry, 3857), st_buffer(st_transform(geometry, 3857), 50)
         from features f join source_ids i on i.import_id = f.import_id where i.power_type = 's';
- 
+
 insert into power_line (line_id, power_name, extent, radius)
-   select i.power_id, 'line', st_transform(geometry, 3857), array[750,750]
-        from features f join source_ids i on i.import_id = f.import_id where i.power_type = 'l';
+     select i.power_id, 'line', st_transform(geometry, 3857), array[750,750]
+       from features f
+       join source_ids i on i.import_id = f.import_id
+      where i.power_type = 'l';
 
--- just for visualization...
-create view power_line_terminals (line_id, terminals) as
-    select line_id, st_multi(st_union(st_buffer(st_startpoint(extent), radius[1]), st_buffer(st_endpoint(extent), radius[2]))) from power_line;
-
+insert into power_generator (generator_id, location, tags)
+     select nextval('generator_id'), st_transform(geometry, 3857), properties
+       from features
+      where st_geometrytype(geometry) = 'ST_Point'
+        and properties->'symbol' not in (
+                'Substation',
+                'Substation, under construction',
+                'Converter Station',
+                'Converter Station, under construction',
+                'Converter Station Back-to-Back'
+            );
 
 commit;
