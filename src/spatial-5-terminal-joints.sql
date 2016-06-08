@@ -56,7 +56,8 @@ update power_line l
         ) f (line_id, location) group by line_id
    ) t (line_id, locations) where t.line_id = l.line_id;
 
-insert into source_objects (power_id, power_type, objects)
-    select station_id, 's', track_objects(line_id, 'l', 'merge') from terminal_joints;
+insert into derived_objects (derived_id, derived_type, operation, source_id, source_type)
+     select station_id, 's', 'merge', line_id, array['l']
+       from terminal_joints;
 
 commit;

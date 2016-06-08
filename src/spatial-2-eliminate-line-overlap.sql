@@ -57,8 +57,9 @@ insert into power_line (line_id, power_name, extent, radius)
         join line_intersections i on i.line_id = s.old_id
         join power_line l on l.line_id = s.old_id;
 
-insert into source_objects (power_id, power_type, objects)
-    select new_id, 'l', track_objects(array[old_id], 'l', 'split') from split_lines;
+insert into derived_objects (derived_id, derived_type, operation, source_id, source_type)
+     select new_id, 'l', 'split', array[old_id], array['l']
+       from split_lines;
 
 update power_line l
    set extent = c.new_extent,

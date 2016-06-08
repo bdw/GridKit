@@ -93,13 +93,13 @@ insert into joint_merged_edges (new_id, extent, station_id, old_id)
        ) g(k,v) on s.v = g.k where array_length(s,1) is not null;
 
 insert into joint_cyclic_edges (extent, line_id)
-    select e, array_agg(v)
-        from joint_edge_set e
-        where array_length(s,1) is null
-        group by k,e;
+     select e, array_agg(v)
+       from joint_edge_set e
+      where array_length(s,1) is null
+      group by k,e;
 
-insert into source_objects (power_id, power_type, objects)
-    select new_id, 'l', track_objects(old_id, 'l', 'merge') from joint_merged_edges;
+insert into derived_objects (derived_id, derived_type, operation, source_id, source_type)
+    select new_id, 'l', 'merge', old_id, array['l'] from joint_merged_edges;
 
 insert into topology_edges (line_id, station_id, line_extent, direct_line)
     select new_id, e.station_id, extent, st_makeline(a.station_location, b.station_location)

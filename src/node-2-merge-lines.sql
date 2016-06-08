@@ -62,14 +62,14 @@ insert into power_line (line_id, power_name, extent, radius)
     select line_id, 'merged', extent, default_radius(extent)
         from node_merged_lines;
 
-insert into source_objects (power_id, power_type, objects)
-    select line_id, 'l', json_build_object('join', array(
-        select json_build_object('source', source_id)::jsonb from source_ids i where i.osm_id = any(m.way_id) and i.osm_type = 'w'
-    ))::jsonb
-    from node_merged_lines m;
+insert into derived_objects (derived_id, derived_type, operation, source_id, source_type)
+     select line_id, 'l', 'join',
+            array(select power_id from source_objects o where o.osm_id = any(m.way_id) and o.osm_type = 'w'),
+            array_fill('l'::char(1), array[array_length(m.way_id,1)])
+       from node_merged_lines m;
 
 delete from power_line l where exists (
-    select 1 from source_ids
+    select 1 from source_objects
         where osm_type = 'w' and osm_id in (
             select src from node_line_pair union select dst from node_line_pair
         )

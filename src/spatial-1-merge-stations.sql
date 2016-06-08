@@ -59,12 +59,13 @@ insert into merged_stations (new_id, old_id, area)
 
 -- TODO ; somehow during the union of ares, we're getting multipolygons
 insert into power_station (station_id, power_name, location, area)
-    select new_id, 'merge', ST_Centroid(area), area
-         from merged_stations;
+     select new_id, (select power_name from power_station where station_id = any(old_id) order by st_area(area) desc limit 1),
+            ST_Centroid(area), area
+       from merged_stations;
 
-insert into source_objects (power_id, power_type, objects)
-    select new_id, 's', track_objects(old_id, 's', 'merge')
-        from merged_stations;
+insert into derived_objects (derived_id, derived_type, operation, source_id, source_type)
+     select new_id, 's', 'merge', old_id, array['s']
+       from merged_stations;
 
 delete from power_station s where station_id in (
     select unnest(old_id) from merged_stations

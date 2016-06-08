@@ -12,7 +12,7 @@ drop function if exists buffered_station_area(geometry(polygon));
 drop function if exists connect_lines(a geometry(linestring), b geometry(linestring));
 drop function if exists default_radius(geometry);
 drop function if exists minimal_radius(geometry, geometry, int array);
-drop function if exists track_objects(integer array, char(1), text);
+
 
 create function array_remove(a anyarray, b anyarray) returns anyarray as $$
 begin
@@ -94,14 +94,6 @@ create function minimal_radius(line geometry, area geometry, radius int array) r
 begin
     return array[case when st_dwithin(st_startpoint(line), area, 1) then 1 else radius[1] end,
                  case when st_dwithin(st_endpoint(line), area, 1) then 1 else radius[2] end];
-end;
-$$ language plpgsql;
-
-
-create function track_objects(pi integer array, pt char(1), op text) returns jsonb
-as $$
-begin
-    return json_build_object(op, to_json(array(select objects from source_objects where power_id = any(pi) and power_type = pt)))::jsonb;
 end;
 $$ language plpgsql;
 
