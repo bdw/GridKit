@@ -1,145 +1,140 @@
 begin;
-drop table if exists source_station_properties;
-drop table if exists source_line_properties;
-drop function if exists line_properties_for_object(integer,jsonb);
-drop function if exists line_properties_for_source(integer,text);
-drop function if exists line_properties_for_join(integer,jsonb);
-drop table if exists line_properties_conflicts;
-drop table if exists computed_line_properties;
-drop function if exists station_properties_for_object(integer,jsonb);
-drop function if exists station_properties_for_source(integer,text);
-drop function if exists station_properties_for_merge(integer,jsonb);
-drop table if exists computed_station_properties;
+-- this replaces the 'electric' series in the OSM directory, primarily
+-- because the situation for ENTSO-E is drastically simpler
+drop function if exists derive_line_structure(integer);
+drop function if exists join_line_structure(integer, integer array);
+drop function if exists derive_station_properties(integer);
+drop function if exists merge_station_properties(integer, integer array);
+drop table if exists station_properties;
+drop table if exists line_structure_conflicts;
+drop table if exists line_structure;
 
-create table source_station_structure (
-    import_id integer primary key,
-    symbol   text,
-    name     text,
-    capacity numeric,
-    under_construction boolean
-);
 
-create table source_line_structure (
-    import_id integer primary key,
-    name text,
-    voltage integer,
-    frequency integer,
-    circuits integer,
-    length_m numeric,
+create table station_properties (
+    station_id integer primary key,
+    symbol     text,
+    name       text,
     under_construction boolean,
-    underground boolean
+    tags       hstore
 );
 
-create table computed_line_properties (
+create table line_structure (
     line_id integer primary key,
     voltage integer,
-    frequency integer,
     circuits integer,
-    length_m numeric,
+    dc_line boolean,
+    underground boolean,
     under_construction boolean,
-    underground boolean
+    length_m numeric,
+    tags hstore
 );
 
-create table line_properties_conflicts (
-    line_id integer not null,
-    conflicting_objects jsonb,
-    conflicting_properties computed_line_properties array
+create table line_structure_conflicts (
+    line_id   integer not null,
+    conflicts line_structure array
 );
 
-create table computed_station_properties (
-   station_id integer primary key,
-   symbol     text,
-   name       text,
-   capacity   numeric,
-   under_construction boolean
-);
+insert into station_properties (station_id, symbol, name, under_construction, tags)
+    select power_id, properties->'symbol', properties->'name_all', (properties->'under_construction')::boolean,
+           properties - array['symbol','name_all','under_construction']
+      from features f
+      join source_objects o on o.import_id = f.import_id and o.power_type = 's';
 
-insert into source_station_properties (import_id, symbol, name, capacity, under_construction)
-   select import_id, properties->'symbol', properties->'name_all', (properties->'mw')::numeric,
-           (properties->'under_construction')::boolean
-            from features f where st_geometrytype(f.geometry) = 'ST_Point';
+insert into line_structure (line_id, voltage, circuits, length_m, under_construction, underground, dc_line, tags)
+     select power_id,
+            substring(properties->'voltagelevel' from '^[0-9]+')::int,
+            (properties->'numberofcircuits')::int,
+            (properties->'shape_length')::numeric,
+            (properties->'underconstruction')::boolean,
+            (properties->'underground')::boolean,
+            (properties->'current' = 'DC'),
+            properties - array['voltagelevel','numberofcircuits','shape_length','underconstruction','underground','current']
+      from features f
+      join source_objects o on o.import_id = f.import_id and o.power_type = 'l';
 
-insert into source_line_properties
-       (import_id, name, frequency, voltage, circuits, length_m, under_construction, underground)
-    select import_id, properties->'text_',
-           case when substring(properties->'symbol', 1, 7) = 'DC-Line' then 0 else 50 end,
-           substring(properties->'voltagelevel' from '^[0-9]+')::int,
-           (properties->'numberofcircuits')::int,
-           (properties->'shape_length')::numeric,
-           (properties->'underconstruction')::bool,
-           (properties->'underground')::bool
-           from features f where st_geometrytype(f.geometry) = 'ST_LineString';
-
-
-
-create function line_properties_for_object(line_id integer, obj jsonb) returns computed_line_properties as $$
-begin
-    return case when obj ? 'source' then line_properties_for_source(line_id, obj->>'source')
-                when obj ? 'split'  then line_properties_for_object(line_id, obj->'split'->0)
-                when obj ? 'join'   then line_properties_for_join(line_id, obj) end;
-end;            
-$$ language plpgsql;
-
-create function line_properties_for_source(line_id integer, source_id text) returns computed_line_properties as $$
-begin
-     return row(line_id, voltage, frequency, circuits, length_m, under_construction, underground)
-            from source_line_properties where import_id = source_id::integer;
-end;
-$$ language plpgsql;
-
-
-create function line_properties_for_join(line_id integer, obj jsonb) returns computed_line_properties as $$
+create function derive_line_structure (i integer) returns line_structure as $$
 declare
-    raw_properties computed_line_properties array;
-    have_conflicts integer;
+    s line_structure;
+    d derived_objects;
 begin
-    raw_properties = array(select line_properties_for_object(line_id, prt) from jsonb_array_elements(obj->'join') ar(prt));
-    have_conflicts = count(*) from (
-         select distinct (e).* from unnest(raw_properties) e
-    ) _g;
-    if have_conflicts > 1 then
-        insert into line_properties_conflicts (line_id, conflicting_objects, conflicting_properties)
-               values (line_id, obj->'join', raw_properties);
-    end if;
-    -- TODO find and record conflicts
-    return raw_properties[1];
-end;
-$$ language plpgsql;
 
-create function station_properties_for_object(station_id integer, obj jsonb) returns computed_station_properties as $$
-begin
-    if not (obj ? 'source' or obj ? 'merge')
+    select * into s from line_structure where line_id = i;
+    if (s).line_id is not null
     then
-        raise exception 'cannot parse %', obj;
+        return s;
     end if;
-    return case when obj ? 'source' then station_properties_for_source(station_id, obj->>'source')
-                when obj ? 'merge'  then station_properties_for_merge(station_id, obj) end;
+
+    select * into d from derived_objects where derived_id = i and derived_type = 'l';
+    if d is null
+    then
+        raise exception 'Cannot find derived objects for line_id %', i;
+    elsif d.operation = 'split' then
+        s = derive_line_structure(d.source_id[1]);
+    elsif d.operation = 'join' then
+        s = join_line_structure(d.derived_id, d.source_id);
+    end if;
+
+    -- memoize the computed line structure
+    insert into line_structure (line_id, voltage, circuits, dc_line, underground, under_construction, length_m)
+         select i, (s).voltage, (s).circuits, (s).dc_line, (s).underground, (s).under_construction, (s).length_m;
+    return s;
 end;
 $$ language plpgsql;
 
-create function station_properties_for_source(station_id integer, source_id text) returns computed_station_properties as $$
-begin
-    return row(station_id, symbol, name, capacity, under_construction) from source_station_properties where import_id = source_id::integer;
-end;
-$$ language plpgsql;
-
-create function station_properties_for_merge(station_id integer, obj jsonb) returns computed_station_properties as $$
+create function join_line_structure (i integer, j integer array) returns line_structure as $$
 declare
-    raw_data computed_station_properties array;
-    have_conflicts integer;
+    s line_structure array;
+    c integer;
 begin
-    raw_data = array(select station_properties_for_object(station_id, prt) from jsonb_array_elements(obj->'merge') ar(prt));
-    return raw_data[1];
+    s = array(select derive_line_structure(l_id) from unnest(j) f(l_id));
+    c = count(*) from (select distinct (e).voltage, (e).dc_line, (e).circuits, (e).underground from unnest(s) e) _f;
+    if c > 0
+    then
+        insert into line_structure_conflicts (line_id, conflicts) values (i, s);
+    end if;
+    return row(i, (s[1]).voltage, (s[1]).circuits, (s[1]).dc_line, (s[1]).underground, (s[1]).under_construction,
+               (select sum((e).length_m) from unnest(s) e), (s[1]).tags); -- TODO merge tags
+end
+$$ language plpgsql;
+
+create function derive_station_properties(i integer) returns station_properties as $$
+declare
+    p station_properties;
+    d derived_objects;
+begin
+    select * into p from station_properties where station_id = i;
+    if (p).station_id is not null
+    then
+        return p;
+    end if;
+    select * into d from derived_objects where derived_id = i and derived_type = 's';
+    if d is null
+    then
+        raise exception 'Cannot find derived objects for station_id %', i;
+    elsif (d).operation = 'merge'
+    then
+        p = merge_station_properties(i, d.source_id);
+    end if;
+    insert into station_properties (station_id, symbol, name, under_construction, tags)
+         select i, (p).symbol, (p).name, (p).under_construction, (p).tags;
+    return p;
 end;
 $$ language plpgsql;
 
+create function merge_station_properties(i integer, m integer array) returns station_properties as $$
+begin
+    -- very noppy implementation
+    return derive_station_properties(s_id) from unnest(m) s_id limit 1;
+end
+$$ language plpgsql;
 
-insert into computed_line_properties
-    select (line_properties_for_object(e.line_id, o.objects)).* from source_objects o join topology_edges e on e.line_id = o.power_id and o.power_type = 'l';
-
-insert into computed_station_properties
-    select (station_properties_for_object(n.station_id, o.objects)).*
-      from topology_nodes n join source_objects o on o.power_id = n.station_id and o.power_type = 's'
-     where n.topology_name != 'joint';
-
+do $$
+begin
+    perform derive_line_structure(line_id) from topology_edges e
+      where not exists (select 1 from line_structure l where l.line_id = e.line_id);
+    perform derive_station_properties(station_id) from topology_nodes n
+      where topology_name != 'joint'
+        and not exists (select 1 from station_properties s where s.station_id = n.station_id);
+end
+$$ language plpgsql;
 commit;
