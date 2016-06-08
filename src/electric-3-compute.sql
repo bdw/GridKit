@@ -1,4 +1,5 @@
 begin;
+-- TODO this needs a /major/ rework
 drop function if exists line_structure_from_source(text);
 drop function if exists line_structure_from_lateral_merge(jsonb);
 drop function if exists line_structure_from_end_join(jsonb);

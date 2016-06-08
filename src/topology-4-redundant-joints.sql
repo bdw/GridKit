@@ -99,10 +99,10 @@ insert into joint_cyclic_edges (extent, line_id)
       group by k,e;
 
 insert into derived_objects (derived_id, derived_type, operation, source_id, source_type)
-    select new_id, 'l', 'merge', old_id, array['l'] from joint_merged_edges;
+     select new_id, 'l', 'join', old_id, array['l'] from joint_merged_edges;
 
 insert into topology_edges (line_id, station_id, line_extent, direct_line)
-    select new_id, e.station_id, extent, st_makeline(a.station_location, b.station_location)
+     select new_id, e.station_id, extent, st_makeline(a.station_location, b.station_location)
        from joint_merged_edges e
        join topology_nodes a on a.station_id = e.station_id[1]
        join topology_nodes b on b.station_id = e.station_id[2];

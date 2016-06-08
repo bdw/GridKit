@@ -1,20 +1,33 @@
 begin;
-drop table if exists electric_tags;
+drop table if exists line_tags;
 drop table if exists wires_to_numbers;
 drop function if exists string_to_integer_array(text,text);
 drop function if exists string_to_float_array(text,text);
 drop function if exists number_of_wires(text);
 
-create table electric_tags (
-    source_id varchar(64) primary key,
+
+-- table of parsed line tags
+create table line_tags (
+    line_id integer primary key,
     power_name varchar(64) not null,
     voltage integer array,
     frequency float array,
     cables integer array,
-    wires integer array
+    wires integer array,
+    circuits integer array
 );
 
-create index electric_tags_power_name_idx on electric_tags (power_name);
+create table station_tags (
+    station_id integer primary key,
+    power_name varchar(64) not null,
+    -- we don't /really/ care about those, since they can be derived
+    -- from connected lines
+    voltage integer array,
+    frequency float array,
+    station_name text,
+    operator text,
+    substation text
+);
 
 
 create function string_to_integer_array(a text, b text) returns integer array as $$
@@ -86,12 +99,22 @@ end;
 $$ language plpgsql;
 
 
-insert into electric_tags (source_id, power_name, voltage, frequency, cables, wires)
-   select source_id, tags->'power',
-          string_to_integer_array(tags->'voltage',';'),
-          string_to_float_array(tags->'frequency',';'),
-          string_to_integer_array(tags->'cables',';'),
-          number_of_wires(tags->'wires')
-       from source_tags;
+insert into line_tags (line_id, power_name, voltage, frequency, cables, wires, circuits)
+     select power_id, tags->'power',
+            string_to_integer_array(tags->'voltage',';'),
+            string_to_float_array(tags->'frequency',';'),
+            string_to_integer_array(tags->'cables',';'),
+            number_of_wires(tags->'wires'),
+            string_to_integer_array(tags->'circuits',';')
+       from source_tags
+      where power_type = 'l';
+
+insert into station_tags (station_id, power_name, voltage, frequency, station_name, operator, substation)
+     select power_id, tags->'power',
+            string_to_integer_array(tags->'voltage', ';'),
+            string_to_float_array(tags->'frequency',';'),
+            tags->'name', tags->'operator', tags->'substation'
+       from source_tags
+      where power_type = 's';
 
 commit;

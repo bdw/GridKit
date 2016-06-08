@@ -59,13 +59,13 @@ insert into node_merged_lines (line_id, way_id, extent)
         from node_line_set group by k, e;
 
 insert into power_line (line_id, power_name, extent, radius)
-    select line_id, 'merged', extent, default_radius(extent)
+     select line_id, 'line', extent, default_radius(extent)
         from node_merged_lines;
 
 insert into derived_objects (derived_id, derived_type, operation, source_id, source_type)
      select line_id, 'l', 'join',
             array(select power_id from source_objects o where o.osm_id = any(m.way_id) and o.osm_type = 'w'),
-            array_fill('l'::char(1), array[array_length(m.way_id,1)])
+            array['l']
        from node_merged_lines m;
 
 delete from power_line l where exists (

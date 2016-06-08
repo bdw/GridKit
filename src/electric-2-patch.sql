@@ -19,43 +19,42 @@ $$ language plpgsql;
 
 drop table if exists divisible_cables;
 create table divisible_cables (
-    source_id varchar(64) primary key,
+    line_id integer primary key,
     num_lines integer,
     total_cables integer,
     cables integer array
 );
 
-insert into divisible_cables (source_id, num_lines, total_cables)
-    select source_id, case when array_length(voltage, 1) > 1 then array_length(voltage, 1)
-                           else array_length(frequency, 1) end, cables[1]
-        from electric_tags e
-        where exists (select 1 from power_type_names t where t.power_name = e.power_name and t.power_type = 'l')
-          and (array_length(voltage, 1) > 1 or array_length(frequency, 1) > 1) and array_length(cables, 1) = 1
-          and cables[1] > 4;
+insert into divisible_cables (line_id, num_lines, total_cables)
+     select line_id, case when array_length(voltage, 1) > 1 then array_length(voltage, 1)
+                          else array_length(frequency, 1) end, cables[1]
+       from line_tags l
+      where (array_length(voltage, 1) > 1 or array_length(frequency, 1) > 1) and array_length(cables, 1) = 1
+        and cables[1] > 4;
 
 
 update divisible_cables
-     set cables = case when total_cables >= num_lines * 3 and total_cables % 3 = 0 then array_mult(fair_division(total_cables / 3, num_lines), 3)
-                       when total_cables >= num_lines * 4 and total_cables % 4 = 0 then array_mult(fair_division(total_cables / 4, num_lines), 4)
-                       when total_cables >= 7 and (total_cables - 4) % 3 = 0 then array_cat(array[4],  array_mult(fair_division((total_cables - 4) / 3, num_lines - 1), 3))
-                       when total_cables >= 11 and (total_cables - 8) % 3 = 0 then array_cat(array[8], array_mult(fair_division((total_cables - 8) / 3, num_lines-1), 3))
-                       else array[total_cables] end;
+   set cables = case when total_cables >= num_lines * 3 and total_cables % 3 = 0 then array_mult(fair_division(total_cables / 3, num_lines), 3)
+                     when total_cables >= num_lines * 4 and total_cables % 4 = 0 then array_mult(fair_division(total_cables / 4, num_lines), 4)
+                     when total_cables >= 7 and (total_cables - 4) % 3 = 0 then array_cat(array[4],  array_mult(fair_division((total_cables - 4) / 3, num_lines - 1), 3))
+                     when total_cables >= 11 and (total_cables - 8) % 3 = 0 then array_cat(array[8], array_mult(fair_division((total_cables - 8) / 3, num_lines-1), 3))
+                     else array[total_cables] end;
 
 -- can't seem to solve this one analytically...
 update divisible_cables set cables = array[4,4,3] where total_cables = 11 and num_lines = 3;
 
-update electric_tags e set cables = d.cables from divisible_cables d where d.source_id = e.source_id;
+update line_tags t set cables = d.cables from divisible_cables d where d.line_id = t.line_id;
 
 -- fix 16.67 Hz to 16.7 frequency for consistency.
-update electric_tags e
+update line_tags
    set frequency = array_replace(frequency::numeric[],16.67,16.7)
-   where 16.67 = any(frequency);
+ where 16.67 = any(frequency);
 
 -- fix inconsistently striped lines
 
 drop table if exists inconsistent_line_tags;
 create table inconsistent_line_tags (
-    source_id varchar(64) primary key,
+    line_id integer primary key,
     voltage integer array,
     frequency float array,
     cables integer array,
@@ -63,10 +62,9 @@ create table inconsistent_line_tags (
 );
 
 -- this affects surprisingly few lines, actually
-insert into inconsistent_line_tags (source_id, voltage, frequency, cables, wires)
-   select source_id, voltage, frequency, cables, wires from electric_tags e
-       where exists (select 1 from power_type_names t where t.power_name = e.power_name and t.power_type = 'l')
-        and (array_length(voltage, 1) >= 3
+insert into inconsistent_line_tags (line_id, voltage, frequency, cables, wires)
+   select line_id, voltage, frequency, cables, wires from line_tags t
+    where (array_length(voltage, 1) >= 3
              and (array_length(frequency, 1) > 1 and array_length(frequency, 1) < array_length(voltage, 1) or
                   array_length(cables, 1) > 1 and array_length(cables, 1) < array_length(voltage, 1) or
                   array_length(wires, 1) > 1 and array_length(wires, 1) < array_length(voltage, 1))
@@ -102,6 +100,6 @@ update inconsistent_line_tags set wires = wires[1:(array_length(voltage,1))]
     where array_length(wires, 1) > array_length(voltage, 1) and array_length(voltage, 1) > 1;
 
 -- that's enough! for now at least
-update electric_tags e set frequency = i.frequency, cables = i.cables, wires = i.wires  from inconsistent_line_tags i where e.source_id = i.source_id;
+update line_tags l set frequency = i.frequency, cables = i.cables, wires = i.wires  from inconsistent_line_tags i where l.line_id = i.line_id;
 
 commit;

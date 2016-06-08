@@ -5,7 +5,6 @@ drop table if exists way_geometry;
 drop table if exists relation_member;
 drop table if exists power_type_names;
 drop table if exists reference_parameters;
-drop table if exists electrical_properties;
 
 drop table if exists power_station;
 drop table if exists power_line;
