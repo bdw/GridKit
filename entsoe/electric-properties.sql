@@ -11,7 +11,7 @@ drop function if exists station_properties_for_source(integer,text);
 drop function if exists station_properties_for_merge(integer,jsonb);
 drop table if exists computed_station_properties;
 
-create table source_station_properties (
+create table source_station_structure (
     import_id integer primary key,
     symbol   text,
     name     text,
@@ -19,11 +19,11 @@ create table source_station_properties (
     under_construction boolean
 );
 
-create table source_line_properties (
+create table source_line_structure (
     import_id integer primary key,
     name text,
-    frequency integer,
     voltage integer,
+    frequency integer,
     circuits integer,
     length_m numeric,
     under_construction boolean,

@@ -1,17 +1,17 @@
 -- script to transfer features to gridkit power stations and lines
 begin;
-drop view if exists power_line_terminals;
 drop table if exists power_station;
 drop table if exists power_line;
 drop table if exists power_generator;
-drop table if exists source_ids;
 drop table if exists source_objects;
+drop table if exists derived_objects;
 
 drop sequence if exists station_id;
 drop sequence if exists line_id;
+drop sequence if exists generator_id;
 drop function if exists minimal_radius(geometry, geometry, int array);
 drop function if exists connect_lines(geometry,geometry);
-drop function if exists track_objects(integer array, char(1), text);
+
 
 create function connect_lines (a geometry(linestring), b geometry(linestring)) returns geometry(linestring) as $$
 begin
@@ -29,14 +29,6 @@ create function minimal_radius(line geometry, area geometry, radius int array) r
 begin
     return array[case when st_dwithin(st_startpoint(line), area, 1) then 1 else radius[1] end,
                  case when st_dwithin(st_endpoint(line), area, 1) then 1 else radius[2] end];
-end;
-$$ language plpgsql;
-
-
-create function track_objects(pi integer array, pt char(1), op text) returns jsonb
-as $$
-begin
-    return json_build_object(op, to_json(array(select objects from source_objects where power_id = any(pi) and power_type = pt)))::jsonb;
 end;
 $$ language plpgsql;
 
@@ -73,41 +65,44 @@ create sequence line_id;
 create sequence station_id;
 create sequence generator_id;
 
-create table source_ids (
+create table source_objects (
     power_id integer not null,
     power_type char(1) not null,
     import_id integer not null,
     primary key (power_id, power_type)
 );
 
-create table source_objects (
-    power_id integer not null,
-    power_type char(1) not null,
-    objects jsonb,
-    primary key (power_id, power_type)
+create table derived_objects (
+    derived_id integer not null,
+    derived_type char(1) not null,
+    operation varchar(16),
+    source_id integer array,
+    source_type char(1) array,
+    primary key (derived_id, derived_type)
 );
 
-insert into source_ids (power_id, power_type, import_id)
-    select nextval('station_id'), 's', import_id
-        from features where st_geometrytype(geometry) = 'ST_Point';
+insert into source_objects (power_id, power_type, import_id)
+     select nextval('station_id'), 's', import_id
+       from features
+      where st_geometrytype(geometry) = 'ST_Point';
 
-insert into source_ids (power_id, power_type, import_id)
-    select nextval('line_id'), 'l', import_id
-        from features where st_geometrytype(geometry) = 'ST_LineString';
-
-insert into source_objects (power_id, power_type, objects)
-    select power_id, power_type, json_build_object('source', import_id::text)::jsonb
-        from source_ids;
+insert into source_objects (power_id, power_type, import_id)
+     select nextval('line_id'), 'l', import_id
+       from features
+      where st_geometrytype(geometry) = 'ST_LineString';
 
 insert into power_station (station_id, power_name, location, area)
-    select i.power_id, properties->'symbol', st_transform(geometry, 3857), st_buffer(st_transform(geometry, 3857), 50)
-        from features f join source_ids i on i.import_id = f.import_id where i.power_type = 's';
+     select o.power_id, properties->'symbol', st_transform(geometry, 3857), st_buffer(st_transform(geometry, 3857), 50)
+       from features f
+       join source_objects o
+         on o.import_id = f.import_id
+      where o.power_type = 's';
 
 insert into power_line (line_id, power_name, extent, radius)
-     select i.power_id, 'line', st_transform(geometry, 3857), array[750,750]
+     select o.power_id, 'line', st_transform(geometry, 3857), array[750,750]
        from features f
-       join source_ids i on i.import_id = f.import_id
-      where i.power_type = 'l';
+       join source_objects o on o.import_id = f.import_id
+      where o.power_type = 'l';
 
 insert into power_generator (generator_id, location, tags)
      select nextval('generator_id'), st_transform(geometry, 3857), properties
