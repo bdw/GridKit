@@ -1,5 +1,6 @@
 begin;
 drop table if exists line_tags;
+drop table if exists station_tags;
 drop table if exists wires_to_numbers;
 drop function if exists string_to_integer_array(text,text);
 drop function if exists string_to_float_array(text,text);
