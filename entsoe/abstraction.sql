@@ -62,6 +62,7 @@ insert into station_transformer (transformer_id, station_id, src_bus_id, dst_bus
 -- exported entities
 create table network_bus (
     bus_id      integer primary key,
+    station_id  integer,
     voltage     integer,
     dc          boolean,
     symbol      text,
@@ -105,9 +106,9 @@ create table network_transformer (
     geometry       text
 );
 
-insert into network_bus (bus_id, voltage, dc, symbol, under_construction, tags, geometry)
-     select t.network_bus_id, t.voltage, t.dc, n.topology_name, p.under_construction, p.tags,
-            st_astext(st_transform(n.station_location, 4326))
+insert into network_bus (bus_id, station_id, voltage, dc, symbol, under_construction, tags, geometry)
+     select t.network_bus_id, t.station_id, t.voltage, t.dc, n.topology_name, p.under_construction,
+            p.tags, st_astext(st_transform(n.station_location, 4326))
        from topology_nodes n
        join station_terminal t on t.station_id = n.station_id
   left join station_properties p on p.station_id = n.station_id;
