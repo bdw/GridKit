@@ -14,8 +14,9 @@ begin
 end;
 $$ language plpgsql;
 
-
-
+-- use the 'circuits' tag to compute the cables if this is not set
+update line_tags set cables = array_mult(circuits, 3)
+ where cables is null and circuits is not null;
 
 drop table if exists divisible_cables;
 create table divisible_cables (
