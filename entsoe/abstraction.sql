@@ -125,7 +125,7 @@ insert into network_link (link_id, src_bus_id, dst_bus_id, voltage, circuits, dc
 insert into network_generator (generator_id, bus_id, symbol, capacity, tags, geometry)
      select g.generator_id,
             (select network_bus_id from station_terminal t where g.station_id = t.station_id order by voltage asc limit 1),
-            p.tags->'symbol', (p.tags->'capacity')::numeric, p.tags - array['symbol','numeric'],
+            p.tags->'symbol', (p.tags->'mw')::numeric, p.tags - array['symbol','mw'],
             st_astext(st_transform(p.location, 4326))
        from topology_generators g
        join power_generator p on p.generator_id = g.generator_id;
