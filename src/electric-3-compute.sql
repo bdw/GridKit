@@ -1,16 +1,16 @@
 begin;
 -- TODO this needs a /major/ rework
-drop function if exists line_structure_from_source(text);
-drop function if exists line_structure_from_lateral_merge(jsonb);
-drop function if exists line_structure_from_end_join(jsonb);
-drop function if exists line_structure_from_object(jsonb);
-drop function if exists line_structure_classify(line_structure array, integer);
+drop function if exists derive_line_structure(integer);
+drop function if exists join_line_structure(integer, integer array);
+drop function if exists merge_line_structure(integer, integer array);
+drop function if exists line_structure_majority(integer, line_structure array);
 drop function if exists line_structure_distance(line_structure, line_structure);
-drop function if exists line_structure_majority(line_structure array);
-drop table if exists computed_line_structure;
-drop type if exists line_structure;
+drop function if exists line_structure_classify(integer, line_structure array, integer);
+drop table if exists line_structure;
 
-create type line_structure as (
+create table line_structure (
+    line_id integer,
+    part_nr integer,
     -- properties
     voltage integer,
     frequency float,
@@ -19,72 +19,93 @@ create type line_structure as (
     -- counts
     num_objects integer,
     num_conflicts integer array[4],
-    num_classes integer
+    num_classes integer,
+    primary key (line_id, part_nr)
 );
 
-create table computed_line_structure (
-    line_id integer primary key,
-    line_structure line_structure
-);
+insert into line_structure (line_id, part_nr, voltage, frequency, cables, wires, num_objects, num_conflicts, num_classes)
+     select line_id, generate_series(1, num_classes),
+            case when voltage is not null then unnest(voltage) end,
+            case when frequency is not null then unnest(frequency) end,
+            case when cables is not null then unnest(cables) end,
+            case when wires is not null then unnest(wires) end,
+            1, array[0,0,0,0], num_classes
+       from line_tags;
 
-
-create function line_structure_from_object(o jsonb) returns line_structure array as $$
-begin
-    return case when o ? 'source' then line_structure_from_source(o->>'source')
-                when o ? 'merge'  then line_structure_from_lateral_merge(o)
-                when o ? 'join'   then line_structure_from_end_join(o)
-                when o ? 'split'  then line_structure_from_object(o->'split'->0) end;
-end;
-$$ language plpgsql;
-
-create function line_structure_from_lateral_merge(m jsonb) returns line_structure array as $$
-begin
-    return array(select unnest(line_structure_from_object(o)) from jsonb_array_elements(j->'merge') ar(o));
-end;
-$$ language plpgsql;
-
-create function line_structure_from_end_join(j jsonb) returns line_structure array as $$
+create function derive_line_structure (i integer) returns line_structure array as $$
 declare
-    raw_data line_structure array;
-    num_classes integer;
-    stripe_class integer[][];
+    r line_structure array;
+    d derived_objects;
 begin
---    raise notice 'electric structure from end join on %', j::text;
-    raw_data = array(select unnest(line_structure_from_object(o)) from jsonb_array_elements(j->'join') ar(o));
-    num_classes = max((e).num_classes) from unnest(raw_data) as e;
-    if num_classes > 1 then
-        raise notice 'implement classification!';
+     r = array(select row(l.*) from line_structure l where line_id = i);
+     if array_length(r, 1) is not null then
+         return r;
+     end if;
+     select * into d from derived_objects where derived_id = i and derived_type = 'l';
+     if d.derived_id is null then
+         raise exception 'No derived object for line_id %', i;
+     elsif d.operation = 'join' then
+         r = join_line_structure(i, d.source_id);
+     elsif d.operation = 'merge' then
+         r = merge_line_structure(i, d.source_id);
+     elsif d.operation = 'split' then
+         r = derive_line_structure(d.source_id[1]);
+     end if;
+     if array_length(r, 1) is null then
+         raise exception 'Could not derive line_structure for %', i;
+     end if;
+     -- store and return
+     insert into line_structure (line_id, part_nr, voltage, frequency, cables, wires, num_objects, num_conflicts, num_classes)
+          select i, s,
+                 (l).voltage, (l).frequency,
+                 (l).cables, (l).wires,
+                 (l).num_objects, (l).num_conflicts, (l).num_classes
+            from (select unnest(r) l, generate_subscripts(r, 1)) f(l, s);
+     return r;
+end;
+$$ language plpgsql;
+
+
+create function join_line_structure(i integer, j integer array) returns line_structure array as $$
+declare
+    r line_structure array;
+    n integer;
+begin
+    r = array(select unnest(derive_line_structure(line_id)) from unnest(j) line_id);
+    n = max((e).num_classes) from unnest(r) as e;
+    if n > 1 then
+       return array(select line_structure_majority(i, array_agg(l))
+                      from line_structure_classify(i, r, n) c
+                      join unnest(r) l on (l).line_id = c.source_id and (l).part_nr = c.part_nr
+                     group by c.class_key);
+    else
+        return array[line_structure_majority(i, r)];
     end if;
     return raw_data;
 end;
 $$ language plpgsql;
 
-create function line_structure_from_source(o text) returns line_structure array as $$
+
+create function merge_line_structure(i integer, j integer array) returns line_structure array as $$
+declare
 begin
-     return array(select row(v, f, c, w, 1, array[0,0,0,0], s) from (
-          select case when voltage is not null then unnest(voltage) end,
-                 case when frequency is not null then unnest(frequency) end,
-                 case when cables is not null then unnest(cables) end,
-                 case when wires is not null then unnest(wires) end,
-                 greatest(array_length(voltage, 1), array_length(frequency, 1), array_length(cables, 1), array_length(wires, 1))
-                 from electric_tags where source_id = o
-          ) e (v, f, c, w, s)
-     );
+
 end;
 $$ language plpgsql;
 
-create function line_structure_majority(data_array line_structure array) returns line_structure as $$
+create function line_structure_majority(i integer, d line_structure array) returns line_structure as $$
 declare
     r line_structure;
 begin
-    with raw_data (voltage, frequency, cables, wires, num_objects, num_conflicts, num_classes) as (select (e).* from unnest(data_array) e),
+--    raise notice 'computing majority for %', i;
+    with raw_data (line_id, part_nr, voltage, frequency, cables, wires, num_objects, num_conflicts, num_classes) as (select (e).* from unnest(d) e),
     cnt( c_t, c_v, c_f, c_c, c_w, n_s ) as (
         select sum(num_objects),
                coalesce(sum(num_objects) filter (where voltage is not null), 0),
                coalesce(sum(num_objects) filter (where frequency is not null), 0),
                coalesce(sum(num_objects) filter (where cables is not null), 0),
                coalesce(sum(num_objects) filter (where wires is not null), 0),
-               max(num_stripes)
+               max(num_classes)
           from raw_data
     ),
     vlt(voltage, conflicts) as (
@@ -119,7 +140,7 @@ begin
         ) _t (wires, score), cnt
         order by wires is not null desc, score desc, wires asc limit 1
     )
-    select vlt.voltage, frq.frequency, cbl.cables, wrs.wires, c_t,
+    select null, null, vlt.voltage, frq.frequency, cbl.cables, wrs.wires, c_t,
            array[vlt.conflicts, frq.conflicts, cbl.conflicts, wrs.conflicts], n_s
       into r
       from vlt, frq, cbl, wrs, cnt;
@@ -132,87 +153,83 @@ create function line_structure_distance(a line_structure, b line_structure) retu
 begin
     return case when a.voltage is null or b.voltage is null then 1
                 when a.voltage = b.voltage then 0
-                when least(a.voltage, b.voltage) = 0 then 2
-                else greatest(a.voltage / b.voltage) / least(a.voltage, b.voltage) end
+                when least(a.voltage, b.voltage) = 0 then 4
+                else 2*greatest(a.voltage, b.voltage)::float / least(a.voltage, b.voltage)::float end
                 +
            case when a.frequency is null or b.frequency is null then 1
                 when a.frequency = b.frequency then 0
-                when least(a.frequency, b.frequency) = 0 then 2
-                else greatest(a.frequency, b.frequency) / least(a.frequency, b.frequency) end
+                when least(a.frequency, b.frequency) = 0 then 4
+                else 2*greatest(a.frequency, b.frequency) / least(a.frequency, b.frequency) end
                 +
            case when a.cables is null or b.cables is null then 1
                 when a.cables = b.cables then 0
                 when least(a.cables, b.cables) = 0 then 2
-                else greatest(a.cables, b.cables) / least(a.cables, b.cables) end
+                else 0.7*greatest(a.cables, b.cables)::float / least(a.cables, b.cables)::float end
                 +
            case when a.wires is null or b.wires is null then 1
                 when a.wires = b.wires then 0
                 when least(a.wires, b.wires) = 0 then 2
-                else greatest(a.wires, b.wires) / least(a.wires, b.wires) end;
+                else 0.7*greatest(a.wires, b.wires)::float / least(a.wires, b.wires)::float end;
 end;
 $$ language plpgsql;
 
 
 
--- temporary table and sequence used for classification algorithm
-drop table if exists line_structure_classes;
-create table line_structure_classes (
-    run_key integer,
-    structure_key integer,
+-- TODO this needs a structure_id of sorts...
+drop table if exists line_structure_class;
+create table line_structure_class (
+    line_id integer,
+    source_id integer,
+    part_nr   integer,
     class_key integer,
-    primary key (run_key, structure_key)
+    primary key (line_id, source_id, part_nr)
 );
 
 create index line_structure_class_key_idx
-          on line_structure_classes (run_key, class_key);
-drop sequence if exists line_structure_classify_run_key;
-create sequence line_structure_classify_run_key;
+          on line_structure_class (line_id, class_key);
 
-
-create function line_structure_classify (raw_data line_structure array, num_classes integer) returns integer[][] as $$
+create function line_structure_classify (i integer, r line_structure array, n integer) returns setof line_structure_class as $$
 declare
-    my_run_key integer;
     edge record;
     src_key integer;
     dst_key integer;
     num_edges integer;
 begin
     num_edges  = 0;
-    my_run_key = nextval('line_structure_classify_run_key');
-    insert into line_structure_classes (run_key, structure_key, class_key)
-         select my_run_key, i, i
-           from generate_subscripts(raw_data) _t(i);
-    for edge in with pairs (src, dst, cost) as (
-        select distinct least(i, j), greatest(i,j),
-               line_structure_distance(raw_data[i], raw_data[j])
-          from generate_subscripts(raw_data) _t(i),
-               generate_subscripts(raw_data) _s(j)
-         where i != j
-      order by line_structure_distance(raw_data[i], raw_data[j]) asc
-    ) select * from pair_cost loop
-        src_key := class_key from line_structure_classes c
-                            where run_key = my_run_key
-                              and structure_key = edge.src;
-        dst_key := class_key from line_structure_classes c
-                            where run_key = my_run_key
-                              and structure_key = edge.dst;
+    insert into line_structure_class (line_id, source_id, part_nr, class_key)
+         select i, (unnest(r)).line_id, (unnest(r)).part_nr, generate_subscripts(r, 1);
+
+    for edge in with pairs (src_id, src_pt, dst_id, dst_pt, cost) as (
+        select a_id, a_pt, b_id, b_pt, line_structure_distance(_s, _t)
+          from unnest(r) _s(a_id, a_pt),
+               unnest(r) _t(b_id, b_pt) -- line id is the first column
+         where a_id < b_id
+      order by line_structure_distance(_s, _t) asc
+    ) select * from pairs loop
+        src_key := class_key from line_structure_class
+                            where line_id = i
+                              and source_id = edge.src_id
+                              and part_nr = edge.src_pt;
+        dst_key := class_key from line_structure_class
+                            where line_id = i
+                              and source_id = edge.dst_id
+                              and part_nr = edge.dst_pt;
         if src_key = dst_key then
             continue;
-        elsif num_edges + num_classes = array_length(raw_data, 1) then
+        elsif num_edges + n = array_length(r, 1) then
             exit;
         else
-            update line_structure_classes
+            update line_structure_class
                set class_key = least(src_key, dst_key)
-             where run_key = my_run_key
+             where line_id = i
                and class_key = greatest(src_key, dst_key);
+            num_edges = num_edges + 1;
         end if;
     end loop;
-    return array(select array_agg(structure_key)
-                   from line_structure_classes c
-                  where run_key = my_run_key
-               group by class_key);
+    return query select line_id, source_id, part_nr, class_key
+                   from line_structure_class
+                  where line_id = i;
 end;
 $$ language plpgsql;
-
 
 commit;

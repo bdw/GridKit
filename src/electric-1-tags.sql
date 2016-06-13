@@ -15,7 +15,8 @@ create table line_tags (
     frequency float array,
     cables integer array,
     wires integer array,
-    circuits integer array
+    circuits integer array,
+    num_classes integer
 );
 
 create table station_tags (
@@ -109,6 +110,12 @@ insert into line_tags (line_id, power_name, voltage, frequency, cables, wires, c
             string_to_integer_array(tags->'circuits',';')
        from source_tags
       where power_type = 'l';
+
+-- compute num_classes
+update line_tags
+   set num_classes = greatest(array_length(voltage, 1), array_length(frequency, 1),
+                              array_length(cables, 1), array_length(wires, 1),
+                              array_length(circuits, 1), 1);
 
 insert into station_tags (station_id, power_name, voltage, frequency, station_name, operator, substation)
      select power_id, tags->'power',

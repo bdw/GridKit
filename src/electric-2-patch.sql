@@ -64,26 +64,13 @@ create table inconsistent_line_tags (
 
 -- this affects surprisingly few lines, actually
 insert into inconsistent_line_tags (line_id, voltage, frequency, cables, wires)
-   select line_id, voltage, frequency, cables, wires from line_tags t
-    where (array_length(voltage, 1) >= 3
-             and (array_length(frequency, 1) > 1 and array_length(frequency, 1) < array_length(voltage, 1) or
-                  array_length(cables, 1) > 1 and array_length(cables, 1) < array_length(voltage, 1) or
-                  array_length(wires, 1) > 1 and array_length(wires, 1) < array_length(voltage, 1))
-
-          or array_length(frequency, 1) >= 3
-             and (array_length(voltage, 1) > 1 and array_length(voltage, 1) < array_length(frequency, 1) or
-                  array_length(cables, 1) > 1 and array_length(cables, 1) < array_length(frequency, 1) or
-                  array_length(wires, 1) > 1 and array_length(wires, 1) < array_length(frequency, 1))
-
-          or array_length(cables, 1) >= 3
-             and (array_length(voltage, 1) > 1 and array_length(voltage, 1) < array_length(cables, 1) or
-                  array_length(frequency, 1) > 1 and array_length(frequency, 1) < array_length(cables, 1) or
-                  array_length(wires, 1) > 1 and array_length(wires, 1) < array_length(cables, 1))
-
-          or array_length(wires, 1) >= 3
-             and (array_length(voltage, 1) > 1 and array_length(voltage, 1) < array_length(wires, 1) or
-                  array_length(frequency, 1) > 1 and array_length(frequency, 1) < array_length(wires, 1) or
-                  array_length(cables, 1) > 1 and array_length(cables, 1) < array_length(wires, 1)));
+     select line_id, voltage, frequency, cables, wires
+       from line_tags t
+      where num_classes > 2 and
+            array_length(voltage, 1) between 2 and num_classes - 1 or
+            array_length(frequency, 1) between 2 and num_classes - 1 or
+            array_length(cables, 1) between 2 and num_classes - 1 or
+            array_length(wires, 1) between 2 and num_classes - 1;
 
 -- patch cables and wires
 -- default cables is 3, default wires is 1
@@ -101,6 +88,11 @@ update inconsistent_line_tags set wires = wires[1:(array_length(voltage,1))]
     where array_length(wires, 1) > array_length(voltage, 1) and array_length(voltage, 1) > 1;
 
 -- that's enough! for now at least
-update line_tags l set frequency = i.frequency, cables = i.cables, wires = i.wires  from inconsistent_line_tags i where l.line_id = i.line_id;
+update line_tags l
+   set frequency = i.frequency, cables = i.cables, wires = i.wires,
+       num_classes = greatest(array_length(i.voltage, 1), array_length(i.frequency, 1),
+                              array_length(i.cables, 1), array_length(i.wires, 1))
+  from inconsistent_line_tags i
+ where l.line_id = i.line_id;
 
 commit;
