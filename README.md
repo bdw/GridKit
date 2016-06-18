@@ -1,4 +1,7 @@
-[![DOI](https://zenodo.org/badge/20808/bdw/GridKit.svg)](https://zenodo.org/badge/latestdoi/20808/bdw/GridKit)
+Code (v1.0): [![DOI](https://zenodo.org/badge/20808/bdw/GridKit.svg)](https://zenodo.org/badge/latestdoi/20808/bdw/GridKit)
+
+ENTSO-E extract: [![DOI](https://zenodo.org/badge/doi/10.5281/zenodo.55853.svg)](http://dx.doi.org/10.5281/zenodo.55853)
+
 
 # GridKit is a power grid extraction toolkit
 
