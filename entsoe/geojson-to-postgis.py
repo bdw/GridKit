@@ -12,16 +12,47 @@ import logging
 CREATE_TABLES = '''
 CREATE EXTENSION IF NOT EXISTS hstore;
 CREATE EXTENSION IF NOT EXISTS postgis;
-DROP TABLE IF EXISTS features;
-CREATE TABLE features (
-    import_id serial,
-    feature_id integer not null,
-    geometry  geometry(geometry,4326),
+DROP TABLE IF EXISTS feature_points;
+DROP TABLE IF EXISTS feature_lines;
+DROP TABLE IF EXISTS feature_multilines;
+CREATE TABLE feature_points (
+    import_id serial primary key,
+    point geometry(point, 4326),
     properties hstore
+);
+CREATE TABLE feature_lines (
+    import_id serial primary key,
+    line  geometry(linestring, 4326),
+    properties hstore
+);
+CREATE TABLE feature_multilines (
+    import_id serial primary key,
+    multiline geometry(multilinestring, 4326),
+    properties hstore
+)
+'''
+
+INSERT_STATEMENT = {
+    'Point': 'INSERT INTO feature_points (point, properties) VALUES (ST_SetSRID(ST_GeomFromText(%s), 4326), %s);',
+    'LineString': 'INSERT INTO feature_lines (line, properties) VALUES (ST_SetSRID(ST_GeomFromText(%s), 4326), %s);',
+    'MultiLineString': 'INSERT INTO feature_multilines (multiline, properties) VALUES (ST_SetSRID(ST_GeomFromText(%s), 4326), %s);',
+}
+
+REMOVE_DUPLICATES = '''
+DELETE FROM feature_lines WHERE import_id IN (
+    SELECT b.import_id
+      FROM feature_lines a, feature_lines b
+     WHERE a.import_id < b.import_id
+       AND a.properties = b.properties
+       AND a.line = b.line
 );
 '''
 
-INSERT_STATEMENT = 'INSERT INTO features (feature_id, geometry, properties) VALUES (%s, ST_SetSRID(ST_GeomFromText(%s), 4326), %s);'
+SPLIT_MULTILINES = '''
+INSERT INTO feature_lines (line, properties)
+     SELECT (ST_Dump(multiline)).geom, properties
+       FROM feature_multilines;
+'''
 
 def hstore(d):
     return dict((unicode(k), unicode(v)) for k, v, in d.items())
@@ -45,9 +76,8 @@ def import_feature(cur,feature_data):
         for feature in feature_data['features']:
             import_feature(cur, feature)
     elif feature_data.get('type') == 'Feature':
-        cur.execute(INSERT_STATEMENT,
-                    (feature_data['id'],
-                     wkt(feature_data['geometry']),
+        cur.execute(INSERT_STATEMENT[feature_data['geometry']['type']],
+                    (wkt(feature_data['geometry']),
                      hstore(feature_data['properties'])))
 
 if __name__ == '__main__':
@@ -72,4 +102,6 @@ if __name__ == '__main__':
         with con:
             with con.cursor() as cur:
                 import_feature(cur, feature_data)
+                cur.execute(SPLIT_MULTILINES)
+                cur.execute(REMOVE_DUPLICATES)
             con.commit()

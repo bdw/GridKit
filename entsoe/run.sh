@@ -1,6 +1,7 @@
 #!/bin/bash
 
-psql -f remove-duplicates.sql
+
+psql -f ../src/prepare-functions.sql
 psql -f gridkit-start.sql
 psql -f ../src/spatial-1-merge-stations.sql
 psql -f ../src/spatial-2-eliminate-line-overlap.sql

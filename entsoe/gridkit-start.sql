@@ -9,29 +9,6 @@ drop table if exists derived_objects;
 drop sequence if exists station_id;
 drop sequence if exists line_id;
 drop sequence if exists generator_id;
-drop function if exists minimal_radius(geometry, geometry, int array);
-drop function if exists connect_lines(geometry,geometry);
-
-
-create function connect_lines (a geometry(linestring), b geometry(linestring)) returns geometry(linestring) as $$
-begin
-    -- select the shortest line that comes from joining the lines
-     -- in all possible directions
-    return e from unnest(array[st_makeline(a, b),
-                               st_makeline(a, st_reverse(b)),
-                               st_makeline(st_reverse(a), b),
-                               st_makeline(st_reverse(a), st_reverse(b))]) f(e)
-              order by st_length(e) asc limit 1;
-end;
-$$ language plpgsql;
-
-create function minimal_radius(line geometry, area geometry, radius int array) returns int array as $$
-begin
-    return array[case when st_dwithin(st_startpoint(line), area, 1) then 1 else radius[1] end,
-                 case when st_dwithin(st_endpoint(line), area, 1) then 1 else radius[2] end];
-end;
-$$ language plpgsql;
-
 
 create table power_station (
     station_id integer primary key,
@@ -83,13 +60,11 @@ create table derived_objects (
 
 insert into source_objects (power_id, power_type, import_id)
      select nextval('station_id'), 's', import_id
-       from features
-      where st_geometrytype(geometry) = 'ST_Point';
+       from feature_points;
 
 insert into source_objects (power_id, power_type, import_id)
      select nextval('line_id'), 'l', import_id
-       from features
-      where st_geometrytype(geometry) = 'ST_LineString';
+       from feature_lines;
 
 insert into power_station (station_id, power_name, location, area)
      select o.power_id, properties->'symbol', st_transform(geometry, 3857), st_buffer(st_transform(geometry, 3857), 50)
