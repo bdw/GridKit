@@ -3,9 +3,10 @@ begin;
 drop function if exists derive_line_structure(integer);
 drop function if exists join_line_structure(integer, integer array);
 drop function if exists merge_line_structure(integer, integer array);
-drop function if exists line_structure_majority(integer, line_structure array);
+drop function if exists line_structure_majority(integer, line_structure array, boolean);
 drop function if exists line_structure_distance(line_structure, line_structure);
 drop function if exists line_structure_classify(integer, line_structure array, integer);
+drop function if exists line_structure_set(integer, line_structure array);
 drop table if exists line_structure;
 
 create table line_structure (
@@ -23,14 +24,6 @@ create table line_structure (
     primary key (line_id, part_nr)
 );
 
-insert into line_structure (line_id, part_nr, voltage, frequency, cables, wires, num_objects, num_conflicts, num_classes)
-     select line_id, generate_series(1, num_classes),
-            case when voltage is not null then unnest(voltage) end,
-            case when frequency is not null then unnest(frequency) end,
-            case when cables is not null then unnest(cables) end,
-            case when wires is not null then unnest(wires) end,
-            1, array[0,0,0,0], num_classes
-       from line_tags;
 
 create function derive_line_structure (i integer) returns line_structure array as $$
 declare
@@ -56,15 +49,17 @@ begin
      end if;
      -- store and return
      insert into line_structure (line_id, part_nr, voltage, frequency, cables, wires, num_objects, num_conflicts, num_classes)
-          select i, s,
-                 (l).voltage, (l).frequency,
-                 (l).cables, (l).wires,
-                 (l).num_objects, (l).num_conflicts, (l).num_classes
-            from (select unnest(r) l, generate_subscripts(r, 1)) f(l, s);
-     return r;
+          select * from line_structure_set(i, r);
+     return array(select row(l.*) from line_structure_set(i, r) l);
 end;
 $$ language plpgsql;
 
+create function line_structure_set(i integer, r line_structure array) returns setof line_structure as $$
+begin
+     return query select i, s, (l).voltage, (l).frequency, (l).cables, (l).wires, (l).num_objects, (l).num_conflicts, (l).num_classes
+                    from (select unnest(r), generate_subscripts(r, 1)) f(l, s);
+end;
+$$ language plpgsql;
 
 create function join_line_structure(i integer, j integer array) returns line_structure array as $$
 declare
@@ -74,26 +69,38 @@ begin
     r = array(select unnest(derive_line_structure(line_id)) from unnest(j) line_id);
     n = max((e).num_classes) from unnest(r) as e;
     if n > 1 then
-       return array(select line_structure_majority(i, array_agg(l))
+       return array(select line_structure_majority(i, array_agg(l), false)
                       from line_structure_classify(i, r, n) c
                       join unnest(r) l on (l).line_id = c.source_id and (l).part_nr = c.part_nr
                      group by c.class_key);
     else
-        return array[line_structure_majority(i, r)];
+        return array[line_structure_majority(i, r, false)];
     end if;
-    return raw_data;
 end;
 $$ language plpgsql;
 
 
 create function merge_line_structure(i integer, j integer array) returns line_structure array as $$
 declare
+    r line_structure array;
+    n integer;
 begin
-
+    r = array(select unnest(derive_line_structure(line_id)) from unnest(j) line_id);
+    -- if we have multiple classes, multiple voltages, or frequencies, choose to treat them as s
+    n = greatest(max((e).num_classes::bigint), count(distinct (e).voltage), count(distinct (e).frequency)) from unnest(r) as e;
+    if n > 1 then
+        -- divide over c classes
+        return array(select line_structure_majority(i, array_agg(l), true)
+                       from line_structure_classify(i, r, n) c
+                       join unnest(r) l on (l).line_id = c.source_id and (l).part_nr = c.part_nr
+                      group by c.class_key);
+    else
+        return array[line_structure_majority(i, r, true)];
+    end if;
 end;
 $$ language plpgsql;
 
-create function line_structure_majority(i integer, d line_structure array) returns line_structure as $$
+create function line_structure_majority(i integer, d line_structure array, sum_cables boolean) returns line_structure as $$
 declare
     r line_structure;
 begin
@@ -139,11 +146,16 @@ begin
            group by wires
         ) _t (wires, score), cnt
         order by wires is not null desc, score desc, wires asc limit 1
+    ),
+    _sum (cables) as (
+        select sum(cables) from raw_data where cables is not null
     )
-    select null, null, vlt.voltage, frq.frequency, cbl.cables, wrs.wires, c_t,
+    select null, null, vlt.voltage, frq.frequency,
+           case when sum_cables then _sum.cables else cbl.cables end,
+           wrs.wires, c_t,
            array[vlt.conflicts, frq.conflicts, cbl.conflicts, wrs.conflicts], n_s
       into r
-      from vlt, frq, cbl, wrs, cnt;
+      from vlt, frq, cbl, wrs, cnt, _sum;
     return r;
 end;
 $$ language plpgsql;
@@ -229,6 +241,24 @@ begin
     return query select line_id, source_id, part_nr, class_key
                    from line_structure_class
                   where line_id = i;
+end;
+$$ language plpgsql;
+
+
+insert into line_structure (line_id, part_nr, voltage, frequency, cables, wires, num_objects, num_conflicts, num_classes)
+     select line_id, generate_series(1, num_classes),
+            case when voltage is not null then unnest(voltage) end,
+            case when frequency is not null then unnest(frequency) end,
+            case when cables is not null then unnest(cables) end,
+            case when wires is not null then unnest(wires) end,
+            1, array[0,0,0,0], num_classes
+       from line_tags;
+
+do $$
+begin
+     -- todo, we may want to split this into partial queries, because
+     -- a single run takes a /very/ long time...
+    perform derive_line_structure(derived_id) from derived_objects where line_id = 'l';
 end;
 $$ language plpgsql;
 
