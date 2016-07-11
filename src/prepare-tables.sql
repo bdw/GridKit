@@ -2,10 +2,8 @@
 begin transaction;
 drop table if exists node_geometry;
 drop table if exists way_geometry;
-drop table if exists relation_member;
-drop table if exists power_type_names;
-drop table if exists reference_parameters;
 
+drop table if exists power_type_names;
 drop table if exists power_station;
 drop table if exists power_line;
 drop table if exists power_generator;
@@ -57,7 +55,7 @@ create table derived_objects (
      derived_type char(1) not null,
      operation varchar(16) not null,
      source_id integer array,
-     source_type char(1) array
+     source_type char(1)
 );
 
 /* lookup table for power types */
@@ -67,26 +65,9 @@ create table power_type_names (
     check (power_type in ('s','l','g', 'v'))
 );
 
-create table reference_parameters (
-    voltage integer primary key,
-    wires   integer not null,
-    r_ohmkm float not null,
-    x_ohmkm float not null,
-    c_nfkm  float not null,
-    i_th_max_a float not null
-);
-
-
-create table relation_member (
-    relation_id bigint,
-    member_id   varchar(64) not null,
-    member_role varchar(64) null
-);
-
 create table power_station (
     station_id integer primary key,
     power_name varchar(64) not null,
-    location geometry(point, 3857),
     area geometry(polygon, 3857)
 );
 
@@ -137,11 +118,6 @@ insert into power_type_names (power_name, power_type)
            ('joint', 'v');
 
 
-insert into reference_parameters (voltage, wires, r_ohmkm, x_ohmkm, c_nfkm, i_th_max_a)
-    -- taken from scigrid, who took them from DENA, who took them from... ?
-    values (220000, 2, 0.080, 0.32, 11.5, 1.3),
-           (380000, 4, 0.025, 0.25, 13.7, 2.6);
-
 
 -- we could read this out of the planet_osm_point table, but i'd
 -- prefer calculating under my own control.
@@ -151,43 +127,33 @@ insert into node_geometry (node_id, point)
 
 insert into way_geometry (way_id, line)
     select way_id, ST_MakeLine(n.point order by order_nr)
-        from (
-             select id as way_id, unnest(nodes) as node_id, generate_subscripts(nodes, 1) as order_nr
-                 from planet_osm_ways
-        ) as wn
-        join node_geometry n on n.node_id = wn.node_id
-        group by way_id;
+      from (
+           select id as way_id,
+                  unnest(nodes) as node_id,
+                  generate_subscripts(nodes, 1) as order_nr
+             from planet_osm_ways
+      ) as wn
+      join node_geometry n on n.node_id = wn.node_id
+     group by way_id;
 
-
--- TODO: figure out how to compute relation geometry, given that it
--- may be recursive
-insert into relation_member (relation_id, member_id, member_role)
-    select s.pid, s.mid, s.mrole from (
-        select id as pid, unnest(akeys(hstore(members))) as mid,
-                    unnest(avals(hstore(members))) as mrole
-              from planet_osm_rels
-    ) s;
 
 -- identify objects as lines or stations
 insert into source_objects (osm_id, osm_type, power_id, power_type)
      select id, 'n', nextval('station_id'), 's'
        from planet_osm_nodes n
-       join power_type_names t
-         on hstore(n.tags)->'power' = t.power_name
+       join power_type_names t on hstore(n.tags)->'power' = t.power_name
         and t.power_type = 's';
 
 insert into source_objects (osm_id, osm_type, power_id, power_type)
      select id, 'w', nextval('station_id'), 's'
-       from planet_osm_ways n
-       join power_type_names t
-         on hstore(n.tags)->'power' = t.power_name
+       from planet_osm_ways w
+       join power_type_names t on hstore(w.tags)->'power' = t.power_name
         and t.power_type = 's';
 
 insert into source_objects (osm_id, osm_type, power_id, power_type)
      select id, 'w', nextval('line_id'), 'l'
-       from planet_osm_ways n
-       join power_type_names t
-         on hstore(n.tags)->'power' = t.power_name
+       from planet_osm_ways w
+       join power_type_names t on hstore(w.tags)->'power' = t.power_name
         and t.power_type = 'l';
 
 insert into power_generator (generator_id, osm_id, osm_type, geometry, location, tags)
@@ -207,34 +173,37 @@ insert into power_generator (generator_id, osm_id, osm_type, geometry, location,
        join power_type_names t on hstore(tags)->'power' = t.power_name
         and t.power_type = 'g';
 
-insert into power_station (station_id, power_name, location, area)
-     select o.power_id, hstore(n.tags)->'power', ng.point, buffered_station_point(ng.point)
+insert into power_station (station_id, power_name, area)
+     select o.power_id, hstore(n.tags)->'power', st_buffer(ng.point, :station_buffer/2)
        from source_objects o
        join planet_osm_nodes n on n.id = o.osm_id
        join node_geometry ng   on ng.node_id = o.osm_id
       where o.power_type = 's' and o.osm_type = 'n';
 
-insert into power_station (station_id, power_name, location, area)
-     select o.power_id, hstore(w.tags)->'power',
-            st_centroid(wg.line),
-            buffered_station_area(way_station_area(wg.line))
-          from source_objects o
-          join planet_osm_ways w on w.id = o.osm_id
-          join way_geometry wg   on wg.way_id = o.osm_id
-          where o.power_type = 's' and o.osm_type = 'w';
+insert into power_station (station_id, power_name, area)
+     select power_id, hstore(w.tags)->'power',
+            st_buffer(case when st_isclosed(wg.line) and st_numpoints(wg.line) > 3 then st_makepolygon(wg.line)
+                           when st_numpoints(wg.line) = 3 and st_isclosed(wg.line) or st_numpoints(wg.line) = 2 then st_buffer(wg.line, 1)
+                           else st_makepolygon(st_addpoint(wg.line, st_startpoint(wg.line))) end, :station_buffer)
+       from source_objects o
+       join planet_osm_ways w on w.id = o.osm_id
+       join way_geometry wg on wg.way_id = o.osm_id
+      where o.osm_type = 'w' and o.power_type = 's';
 
 insert into power_line (line_id, power_name, extent, radius)
-    select o.power_id, hstore(w.tags)->'power', wg.line, default_radius(wg.line)
-        from source_objects o
-        join planet_osm_ways w on w.id = o.osm_id
-        join way_geometry wg on wg.way_id = o.osm_id
-        where o.power_type = 'l';
+     select o.power_id, hstore(w.tags)->'power', wg.line,
+            array_fill(least(:terminal_radius,
+                       st_length(wg.line)/3), array[2]) -- default radius
+       from source_objects o
+       join planet_osm_ways w on w.id = o.osm_id
+       join way_geometry wg on wg.way_id = o.osm_id
+      where o.power_type = 'l';
 
--- setup object and tag tracking
+-- setup tags table
 insert into source_tags (power_id, power_type, tags)
      select o.power_id, o.power_type, hstore(n.tags)
        from planet_osm_nodes n
-       join source_objects o on o.osm_id = n.id and o.osm_type = 'n';        
+       join source_objects o on o.osm_id = n.id and o.osm_type = 'n';
 
 insert into source_tags (power_id, power_type, tags)
      select o.power_id, o.power_type, hstore(w.tags)

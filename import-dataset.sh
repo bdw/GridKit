@@ -1,4 +1,6 @@
 #!/bin/bash
+
+
 if [ -z "$1" ] || [ ! -f "$1" ]
 then
     echo Please pass OSM datafile as argument
@@ -27,12 +29,10 @@ dropdb --if-exists $PGDATABASE || exit 1
 createdb $PGDATABASE || exit 1
 psql -c 'CREATE EXTENSION postgis;' || exit 1
 psql -c 'CREATE EXTENSION hstore;' || exit 1
-
 osm2pgsql -d $PGDATABASE -c -k -s \
-	-S ./power.style \
-	$OSM2PGSQL_FLAGS \
-	$OSM_DATAFILE || exit 1
+    -S ./power.style \
+    --number-processes 1 \
+    $OSM2PGSQL_FLAGS \
+    $OSM_DATAFILE || exit 1
 
-psql -f ./src/prepare-functions.sql
-psql -f ./src/prepare-tables.sql
-
+source ./reset.sh

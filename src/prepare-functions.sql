@@ -5,12 +5,7 @@ drop function if exists array_replace(anyarray, anyarray, anyarray);
 drop function if exists array_sym_diff(anyarray, anyarray);
 drop function if exists array_merge(anyarray, anyarray);
 
-drop function if exists buffered_terminals(geometry(linestring));
-drop function if exists buffered_station_point(geometry(point));
-drop function if exists way_station_area(geometry(linestring));
-drop function if exists buffered_station_area(geometry(polygon));
 drop function if exists connect_lines(a geometry(linestring), b geometry(linestring));
-drop function if exists default_radius(geometry);
 drop function if exists minimal_radius(geometry, geometry, int array);
 
 
@@ -40,32 +35,6 @@ begin
 end;
 $$ language plpgsql;
 
-
-create function buffered_terminals(line geometry(linestring)) returns geometry(linestring) as $$
-begin
-    return st_buffer(st_union(st_startpoint(line), st_endpoint(line)), least(50.0, st_length(line)/3.0));
-end
-$$ language plpgsql;
-
-create function buffered_station_point(point geometry(point)) returns geometry(polygon) as $$
-begin
-    return st_buffer(point, 50);
-end;
-$$ language plpgsql;
-
-create function buffered_station_area(area geometry(polygon)) returns geometry(polygon) as $$
-begin
-    return st_convexhull(st_buffer(area, least(sqrt(st_area(area)), 100)));
-end;
-$$ language plpgsql;
-
-create function way_station_area(line geometry(linestring)) returns geometry(polygon) as $$
-begin
-     return case when st_isclosed(line) and st_numpoints(line) > 3 then st_makepolygon(line)
-                 when st_numpoints(line) = 3 and st_isclosed(line) or st_numpoints(line) = 2 then st_buffer(line, 1)
-                 else st_makepolygon(st_addpoint(line, st_startpoint(line))) end;
-end
-$$ language plpgsql;
 
 create function connect_lines (a geometry(linestring), b geometry(linestring)) returns geometry(linestring) as $$
 begin
