@@ -98,18 +98,18 @@ update attached_lines
 
 
 -- insert joints
-insert into power_station (station_id, power_name, location, area)
-    select station_id, 'joint', location, st_buffer(location, 1)
-        from attachment_joints;
+insert into power_station (station_id, power_name, area)
+     select station_id, 'joint', st_buffer(location, 1)
+       from attachment_joints;
 
 
 
 -- replace power lines
 insert into power_line (line_id, power_name, extent, radius)
-    select s.new_id, l.power_name, s.extent,
-           minimal_radius(s.extent, s.attachments, l.radius)
-        from attachment_split_lines s
-        join power_line l on l.line_id = s.old_id;
+     select s.new_id, l.power_name, s.extent,
+            minimal_radius(s.extent, s.attachments, l.radius)
+       from attachment_split_lines s
+       join power_line l on l.line_id = s.old_id;
 
 
 delete from power_line l where exists (
@@ -118,18 +118,19 @@ delete from power_line l where exists (
 
 -- update extended lengths
 update power_line l
-    set extent = a.new_extent, radius = minimal_radius(a.new_extent, a.attachments, l.radius)
-    from attached_lines a where a.line_id = l.line_id;
+   set extent = a.new_extent, radius = minimal_radius(a.new_extent, a.attachments, l.radius)
+  from attached_lines a
+ where a.line_id = l.line_id;
 
 
 -- track new lines
 insert into derived_objects (derived_id, derived_type, operation, source_id, source_type)
-     select new_id, 'l', 'split', array[old_id], array['l']
+     select new_id, 'l', 'split', array[old_id], 'l'
        from attachment_split_lines;
 
 -- and stations
 insert into derived_objects (derived_id, derived_type, operation, source_id, source_type)
-     select station_id, 's', 'merge', line_id, array['l']
+     select station_id, 's', 'merge', line_id, 'l'
        from attachment_joints;
 
 commit;

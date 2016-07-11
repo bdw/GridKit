@@ -54,35 +54,33 @@ insert into node_split_lines (new_id, old_id, segment, points)
 
 -- create joints power stations, start with ids for osm id
 insert into source_objects (osm_type, osm_id, power_type, power_id)
-    select 'n', node_id, 's', nextval('station_id')
+      select 'n', node_id, 's', nextval('station_id')
         from shared_nodes_joint;
 
-insert into power_station (station_id, power_name, location, area)
-    select o.power_id, 'joint', j.location, st_buffer(j.location, 1)
+insert into power_station (station_id, power_name, area)
+    select o.power_id, 'joint', st_buffer(j.location, 1)
         from shared_nodes_joint j
         join source_objects o on o.osm_type = 'n' and o.osm_id = j.node_id;
 
 -- source objects are combination of lines and the node itself - we'll need to register the node
 insert into derived_objects (derived_id, derived_type, operation, source_id, source_type)
-     select o.power_id, 's', 'merge',
-            array_cat(array[o.power_id], line_id),
-            array_cat(array['s'::char(1)], array_fill('l'::char(1), array[array_length(line_id,1)]))
+     select o.power_id, 's', 'merge', line_id, 'l'
        from shared_nodes_joint j
        join source_objects o on o.osm_type = 'n' and o.osm_id = j.node_id;
 
 -- replacement power lines
 insert into power_line (line_id, power_name, extent, radius)
-    select s.new_id, l.power_name, s.segment,
-           minimal_radius(s.segment, s.points, l.radius)
-        from node_split_lines s
-        join power_line l on l.line_id = s.old_id;
+     select s.new_id, l.power_name, s.segment,
+            minimal_radius(s.segment, s.points, l.radius)
+       from node_split_lines s
+       join power_line l on l.line_id = s.old_id;
 
 insert into derived_objects (derived_id, derived_type, operation, source_id, source_type)
-    select new_id, 'l', 'split', array[old_id], array['l']
-        from node_split_lines;
+    select new_id, 'l', 'split', array[old_id], 'l'
+      from node_split_lines;
 
 delete from power_line l where exists (
-    select 1 from node_joint_lines j where j.line_id = l.line_id
+     select 1 from node_joint_lines j where j.line_id = l.line_id
 );
 
 commit;

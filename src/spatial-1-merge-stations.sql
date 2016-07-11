@@ -24,9 +24,10 @@ create table merged_stations (
 
 
 insert into overlapping_stations (a_id, b_id)
-    select distinct least(a.station_id, b.station_id), greatest(a.station_id, b.station_id)
-        from power_station a, power_station b
-        where a.station_id != b.station_id and st_dwithin(a.area, b.area, 0);
+     select a.station_id, b.station_id
+       from power_station a, power_station b
+      where a.station_id < b.station_id
+        and st_dwithin(a.area, b.area, 0);
 
 insert into station_set (station_id, set_key)
     select station_id, station_id from (
@@ -52,19 +53,22 @@ $$ language plpgsql;
 insert into merged_stations (new_id, old_id, area)
    select nextval('station_id'), old_id, area from (
         select array_agg(z.station_id), st_union(s.area)
-           from station_set z
-           join power_station s on s.station_id = z.station_id
-           group by set_key
+          from station_set z
+          join power_station s on s.station_id = z.station_id
+         group by set_key
    ) f(old_id, area);
 
 -- TODO ; somehow during the union of ares, we're getting multipolygons
-insert into power_station (station_id, power_name, location, area)
-     select new_id, (select power_name from power_station where station_id = any(old_id) order by st_area(area) desc limit 1),
-            ST_Centroid(area), area
+insert into power_station (station_id, power_name, area)
+     select new_id,
+            (select power_name from power_station
+              where station_id = any(old_id)
+              order by st_area(area) desc limit 1),
+            area
        from merged_stations;
 
 insert into derived_objects (derived_id, derived_type, operation, source_id, source_type)
-     select new_id, 's', 'merge', old_id, array['s']
+     select new_id, 's', 'merge', old_id, 's'
        from merged_stations;
 
 delete from power_station s where station_id in (

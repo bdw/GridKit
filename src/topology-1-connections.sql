@@ -29,7 +29,6 @@ create table topology_edges (
     line_id integer primary key,
     station_id integer array,
     line_extent geometry(linestring, 3857),
-    direct_line geometry(linestring, 3857),
     topology_name varchar(64)
 );
 
@@ -50,25 +49,23 @@ create index topology_edges_station_id on topology_edges using gin(station_id);
 create index topology_nodes_line_id    on topology_nodes using gin(line_id);
 
 insert into topology_connections (line_id, station_id)
-    select line_id, station_id
-        from power_line
-        join power_station
-        on st_dwithin(st_startpoint(extent), area, radius[1]) or
-           st_dwithin(st_endpoint(extent), area, radius[2]);
+     select line_id, station_id
+       from power_line
+       join power_station
+         on st_dwithin(st_startpoint(extent), area, radius[1]) or
+            st_dwithin(st_endpoint(extent), area, radius[2]);
 
-insert into topology_edges (line_id, station_id, line_extent, topology_name, direct_line)
-   select c.line_id, c.station_id, l.extent, l.power_name, st_makeline(a.location, b.location) from (
-       select line_id, array_agg(station_id) from topology_connections group by line_id having count(*) = 2
-   ) c (line_id, station_id)
-   join power_line l on c.line_id = l.line_id
-   join power_station a on a.station_id = c.station_id[1]
-   join power_station b on b.station_id = c.station_id[2];
+insert into topology_edges (line_id, station_id, line_extent, topology_name)
+   select c.line_id, c.station_id, l.extent, l.power_name from (
+        select line_id, array_agg(station_id) from topology_connections group by line_id having count(*) = 2
+    ) c (line_id, station_id)
+    join power_line l on c.line_id = l.line_id;
 
 insert into topology_nodes (station_id, line_id, station_location, topology_name)
-    select s.station_id, array_agg(e.line_id), s.location, s.power_name
-        from power_station s
-        join topology_edges e on s.station_id = any(e.station_id)
-        group by s.station_id;
+     select s.station_id, array_agg(e.line_id), st_centroid(s.area), s.power_name
+       from power_station s
+       join topology_edges e on s.station_id = any(e.station_id)
+      group by s.station_id;
 
 
 insert into problem_lines (line_id, station_id, line_extent, line_terminals, station_area)
@@ -87,9 +84,10 @@ insert into dangling_lines (line_id, extent)
    );
 
 insert into topology_generators (generator_id, station_id)
-     select generator_id, (select n.station_id from power_station s
-                             join topology_nodes n on n.station_id = s.station_id
-                            where n.topology_name != 'joint'
-                            order by g.location <-> s.area limit 1)
+     select generator_id,
+            (select n.station_id from power_station s
+               join topology_nodes n on n.station_id = s.station_id
+              where n.topology_name != 'joint'
+              order by g.location <-> s.area limit 1)
        from power_generator g;
 commit;

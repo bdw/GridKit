@@ -13,7 +13,6 @@ drop sequence if exists generator_id;
 create table power_station (
     station_id integer primary key,
     power_name varchar(64) not null,
-    location geometry(point, 3857),
     area geometry(polygon, 3857)
 );
 
@@ -54,7 +53,7 @@ create table derived_objects (
     derived_type char(1) not null,
     operation varchar(16),
     source_id integer array,
-    source_type char(1) array,
+    source_type char(1),
     primary key (derived_id, derived_type)
 );
 
@@ -66,16 +65,17 @@ insert into source_objects (power_id, power_type, import_id)
      select nextval('line_id'), 'l', import_id
        from feature_lines;
 
-insert into power_station (station_id, power_name, location, area)
-     select o.power_id, properties->'symbol', st_transform(point, 3857),
-            st_buffer(st_transform(point, 3857), 50)
+insert into power_station (station_id, power_name, area)
+     select o.power_id, properties->'symbol',
+            st_buffer(st_transform(point, 3857), :station_buffer)
        from feature_points f
        join source_objects o
          on o.import_id = f.import_id
       where o.power_type = 's';
 
 insert into power_line (line_id, power_name, extent, radius)
-     select o.power_id, 'line', st_transform(line, 3857), array[750,750]
+     select o.power_id, 'line', st_transform(line, 3857),
+            array[:terminal_radius,:terminal_radius]
        from feature_lines f
        join source_objects o on o.import_id = f.import_id
       where o.power_type = 'l';

@@ -258,7 +258,10 @@ do $$
 begin
      -- todo, we may want to split this into partial queries, because
      -- a single run takes a /very/ long time...
-    perform derive_line_structure(derived_id) from derived_objects where line_id = 'l';
+    perform derive_line_structure(derived_id)
+       from derived_objects j
+       join topology_edges e on e.line_id = j.derived_id
+      where derived_type = 'l';
 end;
 $$ language plpgsql;
 

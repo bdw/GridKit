@@ -1,12 +1,18 @@
 #!/bin/bash
 
+source src/defaults.conf
+if [ -f ./gridkit.conf ]
+then
+    source ./gridkit.conf
+fi
+
 # run postgresql with 'safe mode'
 shopt -s expand_aliases
 alias psql='psql -v ON_ERROR_STOP=1'
-
 # shared node algorithms before any others
 psql -f src/node-1-find-shared.sql || exit 1
-psql -f src/node-2-merge-lines.sql || exit 1
+psql -v terminal_radius=$GRIDKIT_TERMINAL_RADIUS \
+     -f src/node-2-merge-lines.sql || exit 1
 psql -f src/node-3-line-joints.sql || exit 1
 
 # spatial algorithms benefit from reduction of work from shared node
@@ -21,15 +27,15 @@ psql -f src/spatial-6-merge-lines.sql || exit 1
 # topological algorithms
 psql -f src/topology-1-connections.sql || exit 1
 psql -f src/topology-2-dangling-joints.sql || exit 1
-psql -f src/topology-3-redundant-splits.sql || exit 1
+psql -v merge_distortion=$GRIDKIT_MERGE_DISTORTION \
+     -f src/topology-3-redundant-splits.sql || exit 1
 psql -f src/topology-4-redundant-joints.sql || exit 1
 
 # process electrical tags
 psql -f src/electric-1-tags.sql || exit 1
 psql -f src/electric-2-patch.sql || exit 1
 psql -f src/electric-3-compute.sql || exit 1
-psql -f src/electric-4-defaults.sql || exit
-
+exit;
 # abstract network
 psql -f src/abstraction-1-high-voltage-network.sql || exit 1
 psql -f src/abstraction-2-export.sql || exit 1

@@ -50,15 +50,6 @@ begin
 end;
 $$ language plpgsql;
 
-create function default_radius(line geometry) returns int array as $$
-declare
-    r numeric;
-begin
-    r = least(floor(st_length(line)/3.0), 50);
-    return array[r,r];
-end;
-$$ language plpgsql;
-
 create function minimal_radius(line geometry, area geometry, radius int array) returns int array as $$
 begin
     return array[case when st_dwithin(st_startpoint(line), area, 1) then 1 else radius[1] end,

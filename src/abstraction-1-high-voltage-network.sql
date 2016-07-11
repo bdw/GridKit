@@ -12,7 +12,6 @@ create table high_voltage_edges (
     line_id integer primary key,
     station_id integer array,
     line_extent geometry(linestring, 3857),
-    direct_line geometry(linestring, 3857)
 );
 
 with recursive high_voltage_stations (station_id) as (

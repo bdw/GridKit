@@ -82,9 +82,8 @@ insert into merged_lines (new_id, extent, radius, old_id)
 insert into power_line (line_id, power_name, extent, radius)
     select new_id, 'merge', extent, radius from merged_lines;
 
-
 insert into derived_objects (derived_id, derived_type, operation, source_id, source_type)
-     select new_id, 'l', 'join', old_id, array['l']
+     select new_id, 'l', 'join', old_id, 'l'
        from merged_lines;
 
 

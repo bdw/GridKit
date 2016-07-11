@@ -37,7 +37,7 @@ create table line_structure_conflicts (
 insert into station_properties (station_id, symbol, name, under_construction, tags)
     select power_id, properties->'symbol', properties->'name_all', (properties->'under_construction')::boolean,
            properties - array['symbol','name_all','under_construction']
-      from features f
+      from feature_points f
       join source_objects o on o.import_id = f.import_id and o.power_type = 's';
 
 insert into line_structure (line_id, voltage, circuits, length_m, under_construction, underground, dc_line, tags)
@@ -49,7 +49,7 @@ insert into line_structure (line_id, voltage, circuits, length_m, under_construc
             (properties->'underground')::boolean,
             (properties->'current' = 'DC'),
             properties - array['voltagelevel','numberofcircuits','shape_length','underconstruction','underground','current']
-      from features f
+      from feature_lines f
       join source_objects o on o.import_id = f.import_id and o.power_type = 'l';
 
 create function derive_line_structure (i integer) returns line_structure as $$
@@ -72,6 +72,8 @@ begin
         s = derive_line_structure(d.source_id[1]);
     elsif d.operation = 'join' then
         s = join_line_structure(d.derived_id, d.source_id);
+    elsif d.operation = 'merge' then
+        raise exception 'Cannot deal with merges just yet';
     end if;
 
     -- memoize the computed line structure

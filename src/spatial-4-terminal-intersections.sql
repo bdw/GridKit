@@ -22,19 +22,19 @@ create table terminal_sets (
 create index terminal_sets_key on terminal_sets (set_key);
 
 insert into intersecting_terminals (src_id, src_pt, dst_id, dst_pt)
-   select a.line_id, 1, b.line_id, 1 from power_line a, power_line b
-       where a.line_id != b.line_id and st_dwithin(st_startpoint(a.extent), st_startpoint(b.extent), a.radius[1])
-         and not exists (select 1 from power_station s where st_dwithin(s.area, st_startpoint(a.extent), a.radius[1]));
+     select a.line_id, 1, b.line_id, 1 from power_line a, power_line b
+      where a.line_id != b.line_id and st_dwithin(st_startpoint(a.extent), st_startpoint(b.extent), a.radius[1])
+        and not exists (select 1 from power_station s where st_dwithin(s.area, st_startpoint(a.extent), a.radius[1]));
 
 insert into intersecting_terminals (src_id, src_pt, dst_id, dst_pt)
-   select a.line_id, st_numpoints(a.extent), b.line_id, 1 from power_line a, power_line b
-       where a.line_id != b.line_id and st_dwithin(st_endpoint(a.extent), st_startpoint(b.extent), a.radius[2])
-         and not exists (select 1 from power_station s where st_dwithin(s.area, st_endpoint(a.extent), a.radius[2]));
+     select a.line_id, st_numpoints(a.extent), b.line_id, 1 from power_line a, power_line b
+      where a.line_id != b.line_id and st_dwithin(st_endpoint(a.extent), st_startpoint(b.extent), a.radius[2])
+        and not exists (select 1 from power_station s where st_dwithin(s.area, st_endpoint(a.extent), a.radius[2]));
 
 insert into intersecting_terminals (src_id, src_pt, dst_id, dst_pt)
-   select a.line_id, st_numpoints(a.extent), b.line_id, st_numpoints(b.extent) from power_line a, power_line b
-       where a.line_id != b.line_id and st_dwithin(st_endpoint(a.extent), st_endpoint(b.extent), a.radius[2])
-         and not exists (select 1 from power_station s where st_dwithin(s.area, st_endpoint(a.extent), a.radius[2]));
+     select a.line_id, st_numpoints(a.extent), b.line_id, st_numpoints(b.extent) from power_line a, power_line b
+      where a.line_id != b.line_id and st_dwithin(st_endpoint(a.extent), st_endpoint(b.extent), a.radius[2])
+        and not exists (select 1 from power_station s where st_dwithin(s.area, st_endpoint(a.extent), a.radius[2]));
 
 insert into terminal_sets (line_id, line_pt, set_key)
     select line_id, line_pt, nextval('terminal_set_keys')

@@ -28,27 +28,27 @@ insert into redundant_splits (station_id, line_id)
 
 with split_simplify_candidates (line_id, station_id, simple_extent, original_length, original_extents) as (
     select line_id, r.station_id, st_shortestline(a.area, b.area),
-        (select avg(st_length(line_extent)) from topology_edges e where e.line_id = any(r.line_id)),
-        (select st_multi(st_union(line_extent)) from topology_edges e where e.line_id = any(r.line_id))
-        from redundant_splits r
-        join power_station a on a.station_id = r.station_id[1]
-        join power_station b on b.station_id = r.station_id[2]
+           (select avg(st_length(line_extent)) from topology_edges e where e.line_id = any(r.line_id)),
+           (select st_multi(st_union(line_extent)) from topology_edges e where e.line_id = any(r.line_id))
+      from redundant_splits r
+      join power_station a on a.station_id = r.station_id[1]
+      join power_station b on b.station_id = r.station_id[2]
 ) insert into simplified_splits (new_id, station_id, old_id, simple_extent, original_extents, distortion)
     select nextval('line_id'), station_id, line_id,
            simple_extent, original_extents,
            abs(original_length - st_length(simple_extent))
-        from split_simplify_candidates
-        where abs(original_length - st_length(simple_extent)) < 300;
+      from split_simplify_candidates
+      where abs(original_length - st_length(simple_extent)) < :merge_distortion;
 
 insert into derived_objects (derived_id, derived_type, operation, source_id, source_type)
-     select new_id, 'l', 'merge', old_id, array['l']
+     select new_id, 'l', 'merge', old_id, 'l'
        from simplified_splits;
 
 -- edges are only ever replaced, never removed, so we don't need to do a pruning step
 
-insert into topology_edges (line_id, station_id, line_extent, direct_line)
-    select new_id, s.station_id, simple_extent, simple_extent
-        from simplified_splits s;
+insert into topology_edges (line_id, station_id, line_extent)
+     select new_id, s.station_id, simple_extent
+       from simplified_splits s;
 
 update topology_nodes n set line_id = array_replace(n.line_id, r.old_id, r.new_id)
    from (

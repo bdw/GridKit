@@ -42,14 +42,14 @@ create table joint_cyclic_edges (
 create index joint_merged_edges_old_id on joint_merged_edges using gin(old_id);
 
 insert into redundant_joints (joint_id, line_id, station_id)
-    select joint_id, array_agg(line_id), array_agg(distinct station_id) from (
+     select joint_id, array_agg(line_id), array_agg(distinct station_id) from (
         select n.station_id, e.line_id, unnest(e.station_id)
-            from topology_nodes n
-            join topology_edges e on e.line_id = any(n.line_id)
-           where n.topology_name = 'joint'
+          from topology_nodes n
+          join topology_edges e on e.line_id = any(n.line_id)
+         where n.topology_name = 'joint'
     ) f (joint_id, line_id, station_id)
-    where joint_id != station_id
-    group by joint_id having count(distinct station_id) <= 2;
+      where joint_id != station_id
+      group by joint_id having count(distinct station_id) <= 2;
 
 -- create pairs out of simple joints
 insert into joint_edge_pair (joint_id, left_id, right_id)
@@ -99,10 +99,11 @@ insert into joint_cyclic_edges (extent, line_id)
       group by k,e;
 
 insert into derived_objects (derived_id, derived_type, operation, source_id, source_type)
-     select new_id, 'l', 'join', old_id, array['l'] from joint_merged_edges;
+     select new_id, 'l', 'join', old_id, 'l'
+       from joint_merged_edges;
 
-insert into topology_edges (line_id, station_id, line_extent, direct_line)
-     select new_id, e.station_id, extent, st_makeline(a.station_location, b.station_location)
+insert into topology_edges (line_id, station_id, line_extent)
+     select new_id, e.station_id, extent
        from joint_merged_edges e
        join topology_nodes a on a.station_id = e.station_id[1]
        join topology_nodes b on b.station_id = e.station_id[2];
@@ -132,12 +133,13 @@ with removed_cyclic_edges(station_id, line_id) as (
     from removed_cyclic_edges c where c.station_id = n.station_id;
 
 delete from topology_nodes where station_id in (
-    select joint_id from joint_edge_pair
+     select joint_id from joint_edge_pair
 );
+
 delete from topology_edges where line_id in (
-    select unnest(old_id) from joint_merged_edges
-    union all
-    select unnest(line_id) from joint_cyclic_edges
+     select unnest(old_id) from joint_merged_edges
+      union all
+     select unnest(line_id) from joint_cyclic_edges
 );
 
 commit;
