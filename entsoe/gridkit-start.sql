@@ -67,23 +67,23 @@ insert into source_objects (power_id, power_type, import_id)
        from feature_lines;
 
 insert into power_station (station_id, power_name, location, area)
-     select o.power_id, properties->'symbol', st_transform(geometry, 3857), st_buffer(st_transform(geometry, 3857), 50)
-       from features f
+     select o.power_id, properties->'symbol', st_transform(point, 3857),
+            st_buffer(st_transform(point, 3857), 50)
+       from feature_points f
        join source_objects o
          on o.import_id = f.import_id
       where o.power_type = 's';
 
 insert into power_line (line_id, power_name, extent, radius)
-     select o.power_id, 'line', st_transform(geometry, 3857), array[750,750]
-       from features f
+     select o.power_id, 'line', st_transform(line, 3857), array[750,750]
+       from feature_lines f
        join source_objects o on o.import_id = f.import_id
       where o.power_type = 'l';
 
 insert into power_generator (generator_id, location, tags)
-     select nextval('generator_id'), st_transform(geometry, 3857), properties
-       from features
-      where st_geometrytype(geometry) = 'ST_Point'
-        and properties->'symbol' not in (
+     select nextval('generator_id'), st_transform(point, 3857), properties
+       from feature_points
+      where properties->'symbol' not in (
                 'Substation',
                 'Substation, under construction',
                 'Converter Station',
