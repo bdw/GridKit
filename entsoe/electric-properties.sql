@@ -3,6 +3,7 @@ begin;
 -- because the situation for ENTSO-E is drastically simpler
 drop function if exists derive_line_structure(integer);
 drop function if exists join_line_structure(integer, integer array);
+drop function if exists merge_line_structure(integer, integer array);
 drop function if exists derive_station_properties(integer);
 drop function if exists merge_station_properties(integer, integer array);
 drop table if exists station_properties;
@@ -25,7 +26,6 @@ create table line_structure (
     dc_line boolean,
     underground boolean,
     under_construction boolean,
-    length_m numeric,
     tags hstore
 );
 
@@ -35,29 +35,27 @@ create table line_structure_conflicts (
 );
 
 insert into station_properties (station_id, symbol, name, under_construction, tags)
-    select power_id, properties->'symbol', properties->'name_all', (properties->'under_construction')::boolean,
-           properties - array['symbol','name_all','under_construction']
-      from feature_points f
-      join source_objects o on o.import_id = f.import_id and o.power_type = 's';
+     select power_id, properties->'symbol', properties->'name_all', (properties->'under_construction')::boolean,
+            properties - array['symbol','name_all','under_construction']
+       from feature_points f
+       join source_objects o on o.import_id = f.import_id and o.power_type = 's';
 
-insert into line_structure (line_id, voltage, circuits, length_m, under_construction, underground, dc_line, tags)
+insert into line_structure (line_id, voltage, circuits, under_construction, underground, dc_line, tags)
      select power_id,
             substring(properties->'voltagelevel' from '^[0-9]+')::int,
             (properties->'numberofcircuits')::int,
-            (properties->'shape_length')::numeric,
             (properties->'underconstruction')::boolean,
             (properties->'underground')::boolean,
             (properties->'current' = 'DC'),
             properties - array['voltagelevel','numberofcircuits','shape_length','underconstruction','underground','current']
-      from feature_lines f
-      join source_objects o on o.import_id = f.import_id and o.power_type = 'l';
+       from feature_lines f
+       join source_objects o on o.import_id = f.import_id and o.power_type = 'l';
 
 create function derive_line_structure (i integer) returns line_structure as $$
 declare
     s line_structure;
     d derived_objects;
 begin
-
     select * into s from line_structure where line_id = i;
     if (s).line_id is not null
     then
@@ -73,12 +71,12 @@ begin
     elsif d.operation = 'join' then
         s = join_line_structure(d.derived_id, d.source_id);
     elsif d.operation = 'merge' then
-        raise exception 'Cannot deal with merges just yet';
+        s = merge_line_structure(d.derived_id, d.source_id);
     end if;
 
     -- memoize the computed line structure
-    insert into line_structure (line_id, voltage, circuits, dc_line, underground, under_construction, length_m)
-         select i, (s).voltage, (s).circuits, (s).dc_line, (s).underground, (s).under_construction, (s).length_m;
+    insert into line_structure (line_id, voltage, circuits, dc_line, underground, under_construction)
+         select i, (s).voltage, (s).circuits, (s).dc_line, (s).underground, (s).under_construction;
     return s;
 end;
 $$ language plpgsql;
@@ -89,14 +87,23 @@ declare
     c integer;
 begin
     s = array(select derive_line_structure(l_id) from unnest(j) f(l_id));
-    c = count(*) from (select distinct (e).voltage, (e).dc_line, (e).circuits, (e).underground from unnest(s) e) _f;
-    if c > 0
+    c = greatest(count(distinct (e).voltage), count(distinct (e).circuits), count(distinct (e).dc_line), count(distinct (e).underground))
+        from unnest(s) e;
+    if c > 1
     then
         insert into line_structure_conflicts (line_id, conflicts) values (i, s);
     end if;
-    return row(i, (s[1]).voltage, (s[1]).circuits, (s[1]).dc_line, (s[1]).underground, (s[1]).under_construction,
-               (select sum((e).length_m) from unnest(s) e), (s[1]).tags); -- TODO merge tags
+    return row(i, (s[1]).voltage, (s[1]).circuits, (s[1]).dc_line,
+                  (s[1]).underground, (s[1]).under_construction,
+                  (s[1]).tags); -- TODO merge tags
 end
+$$ language plpgsql;
+
+create function merge_line_structure (i integer, j integer array) returns line_structure as $$
+begin
+    -- this causes some problems, may want to reconsider the spatial-first strategy
+    return join_line_structure(i, j);
+end;
 $$ language plpgsql;
 
 create function derive_station_properties(i integer) returns station_properties as $$

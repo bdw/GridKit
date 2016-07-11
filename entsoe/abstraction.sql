@@ -115,8 +115,7 @@ insert into network_bus (bus_id, station_id, voltage, dc, symbol, under_construc
 
 insert into network_link (link_id, src_bus_id, dst_bus_id, voltage, circuits, dc, underground, under_construction, length_m, tags, geometry)
      select e.line_id, s.network_bus_id, d.network_bus_id, l.voltage, l.circuits, l.dc_line, l.underground, l.under_construction,
-            case when l.length_m > 0 then l.length_m else st_length(st_transform(e.line_extent, 4326)::geography) end,
-            l.tags, st_astext(st_transform(e.direct_line, 4326))
+            st_length(st_transform(e.line_extent, 4326)::geography), l.tags, st_astext(st_transform(e.line_extent, 4326))
        from topology_edges e
        join line_structure l   on l.line_id = e.line_id
        join station_terminal s on s.station_id = e.station_id[1] and (s.voltage = l.voltage or s.voltage is null and l.voltage is null) and s.dc = l.dc_line
