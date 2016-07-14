@@ -17,8 +17,10 @@ psql -f ../src/topology-2-dangling-joints.sql
 psql -v merge_distortion=$GRIDKIT_MERGE_DISTORTION \
      -f ../src/topology-3-redundant-splits.sql
 psql -f ../src/topology-4-redundant-joints.sql
-
 psql -f electric-properties.sql
+# Fix edges which should not have been merged
+psql -f fixup-merge.sql
+
 psql -f abstraction.sql
 
 bash ./export.sh
