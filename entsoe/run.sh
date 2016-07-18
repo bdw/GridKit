@@ -20,6 +20,8 @@ psql -f ../src/topology-4-redundant-joints.sql
 psql -f electric-properties.sql
 # Fix edges which should not have been merged
 psql -f fixup-merge.sql
+psql -v hvdc_distance=$GRIDKIT_HVDC_DISTANCE \
+     -f fixup-hvdc.sql
 
 psql -f abstraction.sql
 
