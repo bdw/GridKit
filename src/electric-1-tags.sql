@@ -27,7 +27,7 @@ create table station_tags (
     voltage integer array,
     frequency float array,
     station_name text,
-    operator text,
+    station_operator text,
     substation text
 );
 
@@ -117,7 +117,7 @@ update line_tags
                               array_length(cables, 1), array_length(wires, 1),
                               array_length(circuits, 1), 1);
 
-insert into station_tags (station_id, power_name, voltage, frequency, station_name, operator, substation)
+insert into station_tags (station_id, power_name, voltage, frequency, station_name, station_operator, substation)
      select power_id, tags->'power',
             string_to_integer_array(tags->'voltage', ';'),
             string_to_float_array(tags->'frequency',';'),

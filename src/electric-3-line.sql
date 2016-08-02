@@ -1,5 +1,4 @@
 begin;
--- TODO this needs a /major/ rework
 drop function if exists derive_line_structure(integer);
 drop function if exists join_line_structure(integer, integer array);
 drop function if exists merge_line_structure(integer, integer array);
@@ -187,7 +186,7 @@ $$ language plpgsql;
 
 
 
--- TODO this needs a structure_id of sorts...
+-- TODO this needs a structure_id of sorts... (OR we can introduce link_id here, but that means we need two tables)
 drop table if exists line_structure_class;
 create table line_structure_class (
     line_id integer,
@@ -262,6 +261,7 @@ begin
        from derived_objects j
        join topology_edges e on e.line_id = j.derived_id
       where derived_type = 'l';
+
 end;
 $$ language plpgsql;
 

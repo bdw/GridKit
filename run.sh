@@ -34,8 +34,8 @@ psql -f src/topology-4-redundant-joints.sql || exit 1
 # process electrical tags
 psql -f src/electric-1-tags.sql || exit 1
 psql -f src/electric-2-patch.sql || exit 1
-psql -f src/electric-3-compute.sql || exit 1
-exit;
+psql -f src/electric-3-line.sql || exit 1
+psql -f src/electric-4-station.sql || exit 1
 # abstract network
 psql -f src/abstraction-1-high-voltage-network.sql || exit 1
 psql -f src/abstraction-2-export.sql || exit 1
