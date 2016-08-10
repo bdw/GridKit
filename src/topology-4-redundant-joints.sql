@@ -136,6 +136,8 @@ delete from topology_nodes where station_id in (
      select joint_id from joint_edge_pair
 );
 
+delete from topology_nodes where array_length(line_id, 1) is null;
+
 delete from topology_edges where line_id in (
      select unnest(old_id) from joint_merged_edges
       union all

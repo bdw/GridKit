@@ -43,7 +43,7 @@ insert into merged_station_tags (station_id, power_name, voltage, frequency, sta
             array_to_string(array(select distinct substation from station_tags where station_id = any(source_id)), ';')
        from derived_objects
       where derived_type = 's' and operation = 'merge' and source_type = 's'
-        and exists (select 1 from topology_nodes where station_id = derived_id);
+        and exists (select 1 from topology_nodes where station_id = derived_id and topology_name != 'joint');
  
 -- step three, merge connected-line information with tag information
 insert into station_structure (station_id, voltage, frequency, station_name, station_operator, substation)
@@ -59,5 +59,12 @@ insert into station_structure (station_id, voltage, frequency, station_name, sta
            array(select unnest(t.frequency) union select unnest(s.frequency)), station_name, station_operator, substation
       from merged_station_tags t
       join station_terminals s on s.station_id = t.station_id;
+
+-- step four, synthesize structure information for joints
+insert into station_structure (station_id, voltage, frequency)
+     select a.station_id, a.voltage, a.frequency
+       from station_terminals a
+       join topology_nodes n on n.station_id = a.station_id
+      where n.topology_name = 'joint';
 
 commit;
