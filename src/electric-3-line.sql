@@ -1,4 +1,6 @@
 begin;
+/* temporarily create the table so that the line structure references are correct */
+create table if not exists line_structure ( line_id integer );
 drop function if exists derive_line_structure(integer);
 drop function if exists join_line_structure(integer, integer array);
 drop function if exists merge_line_structure(integer, integer array);
@@ -103,47 +105,45 @@ create function line_structure_majority(i integer, d line_structure array, sum_c
 declare
     r line_structure;
 begin
---    raise notice 'computing majority for %', i;
-    with raw_data (line_id, part_nr, voltage, frequency, cables, wires, num_objects, num_conflicts, num_classes) as (select (e).* from unnest(d) e),
-    cnt( c_t, c_v, c_f, c_c, c_w, n_s ) as (
-        select sum(num_objects),
-               coalesce(sum(num_objects) filter (where voltage is not null), 0),
-               coalesce(sum(num_objects) filter (where frequency is not null), 0),
-               coalesce(sum(num_objects) filter (where cables is not null), 0),
-               coalesce(sum(num_objects) filter (where wires is not null), 0),
-               max(num_classes)
-          from raw_data
+    with raw_data (line_id, part_nr, voltage, frequency, cables, wires, num_objects, num_conflicts, num_classes) as (
+        select (e).* from unnest(d) e
     ),
+    cnt_t (n) as ( select sum(num_objects) from raw_data ),
+    cnt_v (n) as ( select sum(num_objects) from raw_data where voltage is not null ),
+    cnt_f (n) as ( select sum(num_objects) from raw_data where frequency is not null ),
+    cnt_c (n) as ( select sum(num_objects) from raw_data where cables is not null ),
+    cnt_w (n) as ( select sum(num_objects) from raw_data where wires is not null ),
+    num_c (n) as ( select max(num_classes) from raw_data ),
     vlt(voltage, conflicts) as (
-        select voltage, c_v - score from (
+        select voltage, n - score from (
              select voltage, sum(num_objects) - sum(num_conflicts[1])
                from raw_data
-           group by voltage
-        ) _t (voltage, score), cnt
+              group by voltage
+        ) _t (voltage, score), cnt_v
         order by voltage is not null desc, score desc, voltage asc limit 1
     ),
     frq(frequency, conflicts) as (
-        select frequency, c_f - score from (
-             select frequency, sum(num_objects) - sum(num_conflicts[1])
+        select frequency, n - score from (
+             select frequency, sum(num_objects) - sum(num_conflicts[2])
                from raw_data
-           group by frequency
-        ) _t (frequency, score), cnt
+              group by frequency
+        ) _t (frequency, score), cnt_f
         order by frequency is not null desc, score desc, frequency asc limit 1
     ),
     cbl(cables, conflicts) as (
-        select cables, c_c - score from (
-             select cables, sum(num_objects) - sum(num_conflicts[1])
+        select cables, n - score from (
+             select cables, sum(num_objects) - sum(num_conflicts[3])
                from raw_data
-           group by cables
-        ) _t (cables, score), cnt
+              group by cables
+        ) _t (cables, score), cnt_c
         order by cables is not null desc, score desc, cables asc limit 1
     ),
     wrs(wires, conflicts) as (
-        select wires, c_w - score from (
-             select wires, sum(num_objects) - sum(num_conflicts[1])
+        select wires, n - score from (
+             select wires, sum(num_objects) - sum(num_conflicts[4])
                from raw_data
-           group by wires
-        ) _t (wires, score), cnt
+              group by wires
+        ) _t (wires, score), cnt_w
         order by wires is not null desc, score desc, wires asc limit 1
     ),
     _sum (cables) as (
@@ -151,10 +151,11 @@ begin
     )
     select null, null, vlt.voltage, frq.frequency,
            case when sum_cables then _sum.cables else cbl.cables end,
-           wrs.wires, c_t,
-           array[vlt.conflicts, frq.conflicts, cbl.conflicts, wrs.conflicts], n_s
+           wrs.wires, cnt_t.n,
+           array[vlt.conflicts, frq.conflicts, cbl.conflicts, wrs.conflicts],
+           num_c.n
       into r
-      from vlt, frq, cbl, wrs, cnt, _sum;
+      from vlt, frq, cbl, wrs, cnt_t, num_c, _sum;
     return r;
 end;
 $$ language plpgsql;
