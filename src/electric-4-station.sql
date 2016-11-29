@@ -26,11 +26,12 @@ create table merged_station_tags (
 -- step one, the set of connected lines
 insert into station_terminals (station_id, voltage, frequency)
      select n.station_id,
-            array_agg(distinct l.voltage) filter (where l.voltage is not null),
-            array_agg(distinct l.frequency) filter (where l.frequency is not null)
-       from topology_nodes n
-       join line_structure l on l.line_id = any(n.line_id)
-      group by n.station_id;
+            array(select distinct l.voltage from line_structure l
+                   where l.line_id = any(n.line_id) and l.voltage is not null),
+            array(select distinct l.frequency from line_structure l
+                   where l.line_id = any(n.line_id) and l.voltage is not null)
+       from topology_nodes n;
+
 
 -- step two, merge station tags
 insert into merged_station_tags (station_id, power_name, voltage, frequency, station_name, station_operator, substation)

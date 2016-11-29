@@ -254,6 +254,7 @@ insert into line_structure (line_id, part_nr, voltage, frequency, cables, wires,
             1, array[0,0,0,0], num_classes
        from line_tags;
 
+
 do $$
 begin
      -- todo, we may want to split this into partial queries, because
