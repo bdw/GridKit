@@ -8,6 +8,7 @@
 __pycache__/
 *.csv
 *.zip
+*.osm
 *.o5m
 *.osm.pbf
 .R*

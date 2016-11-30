@@ -2,6 +2,7 @@
 begin transaction;
 drop table if exists node_geometry;
 drop table if exists way_geometry;
+drop table if exists station_polygon;
 
 drop table if exists power_type_names;
 drop table if exists power_station;
@@ -22,12 +23,17 @@ create sequence generator_id;
 
 create table node_geometry (
     node_id bigint primary key,
-    point   geometry(point, 3857)
+    point   geometry(point, 3857) not null
 );
 
 create table way_geometry (
     way_id bigint primary key,
-    line   geometry(linestring, 3857)
+    line   geometry(linestring, 3857) not null
+);
+
+create table station_polygon (
+    station_id integer primary key,
+    polygon    geometry(polygon, 3857) not null
 );
 
 -- implementation of source_ids and source_tags table will depend on the data source used
@@ -45,7 +51,7 @@ create index source_objects_power_idx on source_objects (power_type, power_id);
 create table source_tags (
     power_id   integer not null,
     power_type char(1) not null,
-    tags      hstore,
+    tags       hstore,
     primary key (power_id, power_type)
 );
 
@@ -122,19 +128,19 @@ insert into power_type_names (power_name, power_type)
 -- we could read this out of the planet_osm_point table, but i'd
 -- prefer calculating under my own control.
 insert into node_geometry (node_id, point)
-    select id, st_setsrid(st_makepoint(lon/100.0, lat/100.0), 3857)
-        from planet_osm_nodes;
+     select id, st_setsrid(st_makepoint(lon/100.0, lat/100.0), 3857)
+       from planet_osm_nodes;
 
 insert into way_geometry (way_id, line)
-    select way_id, ST_MakeLine(n.point order by order_nr)
-      from (
-           select id as way_id,
-                  unnest(nodes) as node_id,
-                  generate_subscripts(nodes, 1) as order_nr
-             from planet_osm_ways
-      ) as wn
-      join node_geometry n on n.node_id = wn.node_id
-     group by way_id;
+     select way_id, ST_MakeLine(n.point order by order_nr)
+       from (
+            select id as way_id,
+                   unnest(nodes) as node_id,
+                   generate_subscripts(nodes, 1) as order_nr
+              from planet_osm_ways
+          ) as wn
+       join node_geometry n on n.node_id = wn.node_id
+      group by way_id;
 
 
 -- identify objects as lines or stations
@@ -156,6 +162,8 @@ insert into source_objects (osm_id, osm_type, power_id, power_type)
        join power_type_names t on hstore(w.tags)->'power' = t.power_name
         and t.power_type = 'l';
 
+
+
 insert into power_generator (generator_id, osm_id, osm_type, geometry, location, tags)
      select nextval('generator_id'), id, 'n', ng.point, ng.point, hstore(n.tags)
        from planet_osm_nodes n
@@ -173,6 +181,24 @@ insert into power_generator (generator_id, osm_id, osm_type, geometry, location,
        join power_type_names t on hstore(tags)->'power' = t.power_name
         and t.power_type = 'g';
 
+insert into station_polygon (station_id, polygon)
+     select station_id, polygon
+       from (
+            select o.power_id,
+                   case when st_isclosed(wg.line) and st_numpoints(wg.line) > 3 then st_makepolygon(wg.line)
+                        when st_numpoints(wg.line) >= 3
+                          -- looks like an unclosed polygon based on endpoints distance
+                         and st_distance(st_startpoint(wg.line), st_endpoint(wg.line)) < (st_length(wg.line) / 2)
+                        then st_makepolygon(st_addpoint(wg.line, st_startpoint(wg.line)))
+                        else null end
+              from source_objects o
+              join way_geometry wg on o.osm_id = wg.way_id
+             where o.power_type = 's' and o.osm_type = 'w'
+          ) _g(station_id, polygon)
+         -- even so not all polygons will be valid
+      where polygon is not null and st_isvalid(polygon);
+
+
 insert into power_station (station_id, power_name, area)
      select o.power_id, hstore(n.tags)->'power', st_buffer(ng.point, :station_buffer/2)
        from source_objects o
@@ -182,24 +208,25 @@ insert into power_station (station_id, power_name, area)
 
 insert into power_station (station_id, power_name, area)
      select power_id, hstore(w.tags)->'power',
-            st_buffer(case when st_isclosed(wg.line) and st_numpoints(wg.line) > 3 then st_makepolygon(wg.line)
-                           when st_numpoints(wg.line) = 3 and st_isclosed(wg.line) or st_numpoints(wg.line) = 2 then st_buffer(wg.line, 1)
-                           else st_makepolygon(st_addpoint(wg.line, st_startpoint(wg.line))) end, :station_buffer)
+            case when sp.polygon is not null
+                 then st_buffer(sp.polygon, least(:station_buffer, sqrt(st_area(sp.polygon))))
+                 else st_buffer(wg.line, least(:station_buffer, st_length(wg.line)/2)) end
+                  -- not sure if that is the right way to deal with line-geometry stations
        from source_objects o
        join planet_osm_ways w on w.id = o.osm_id
        join way_geometry wg on wg.way_id = o.osm_id
+  left join station_polygon sp on sp.station_id = o.power_id
       where o.osm_type = 'w' and o.power_type = 's';
 
 insert into power_line (line_id, power_name, extent, radius)
      select o.power_id, hstore(w.tags)->'power', wg.line,
-            array_fill(least(:terminal_radius,
-                       st_length(wg.line)/3), array[2]) -- default radius
+            array_fill(least(:terminal_radius, st_length(wg.line)/3), array[2]) -- default radius
        from source_objects o
        join planet_osm_ways w on w.id = o.osm_id
        join way_geometry wg on wg.way_id = o.osm_id
       where o.power_type = 'l';
 
--- setup tags table
+
 insert into source_tags (power_id, power_type, tags)
      select o.power_id, o.power_type, hstore(n.tags)
        from planet_osm_nodes n
