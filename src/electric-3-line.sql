@@ -1,5 +1,5 @@
 begin;
-/* temporarily create the table so that the line structure references are correct */
+/* temporarily create the table so that the line structure type exists */
 create table if not exists line_structure ( line_id integer );
 drop function if exists derive_line_structure(integer);
 drop function if exists join_line_structure(integer, integer array);
@@ -115,7 +115,7 @@ begin
     cnt_w (n) as ( select sum(num_objects) from raw_data where wires is not null ),
     num_c (n) as ( select max(num_classes) from raw_data ),
     vlt(voltage, conflicts) as (
-        select voltage, n - score from (
+        select voltage, coalesce(n - score, 0) from (
              select voltage, sum(num_objects) - sum(num_conflicts[1])
                from raw_data
               group by voltage
@@ -123,7 +123,7 @@ begin
         order by voltage is not null desc, score desc, voltage asc limit 1
     ),
     frq(frequency, conflicts) as (
-        select frequency, n - score from (
+        select frequency, coalesce(n - score, 0) from (
              select frequency, sum(num_objects) - sum(num_conflicts[2])
                from raw_data
               group by frequency
@@ -131,7 +131,7 @@ begin
         order by frequency is not null desc, score desc, frequency asc limit 1
     ),
     cbl(cables, conflicts) as (
-        select cables, n - score from (
+        select cables, coalesce(n - score, 0) from (
              select cables, sum(num_objects) - sum(num_conflicts[3])
                from raw_data
               group by cables
@@ -139,7 +139,7 @@ begin
         order by cables is not null desc, score desc, cables asc limit 1
     ),
     wrs(wires, conflicts) as (
-        select wires, n - score from (
+        select wires, coalesce(n - score, 0) from (
              select wires, sum(num_objects) - sum(num_conflicts[4])
                from raw_data
               group by wires
@@ -256,14 +256,29 @@ insert into line_structure (line_id, part_nr, voltage, frequency, cables, wires,
 
 
 do $$
+declare
+    i integer;
+    c integer;
 begin
-     -- todo, we may want to split this into partial queries, because
-     -- a single run takes a /very/ long time...
-    perform derive_line_structure(derived_id)
-       from derived_objects j
-       join topology_edges e on e.line_id = j.derived_id
-      where derived_type = 'l';
+    -- todo, we may want to split this into partial queries, because
+    -- a single run takes a /very/ long time...
+    i = 0;
+    loop
+        c = count(*) from topology_edges e where not exists (
+             select 1 from line_structure l where l.line_id = e.line_id
+        );
+        i := i + 1;
+        exit when c = 0;
+        raise notice 'Iteration %, % left', i, c;
 
+        perform derive_line_structure(derived_id)
+           from derived_objects j
+           join topology_edges e on e.line_id = j.derived_id
+          where derived_type = 'l'
+            and not exists (select 1 from line_structure l where l.line_id = e.line_id)
+          order by line_id asc
+         limit 1000;
+    end loop;
 end;
 $$ language plpgsql;
 
