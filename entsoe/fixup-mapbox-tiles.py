@@ -141,6 +141,7 @@ def strip_duplicate_stations(fn):
                             'Visible': 'visible',
                             'MW': 'capacity',
                             'mw': 'capacity'})
+    df['symbol'] = df['symbol'].str.split(',').str[0]
 
     outfn = gen_outfn(fn, '-fixed')
     (df[~df.duplicated(subset=['oid'], keep='first')]
