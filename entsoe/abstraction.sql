@@ -58,6 +58,17 @@ insert into station_terminal (station_id, voltage, dc, converter, network_bus_id
      select station_id, voltage, dc_line, converter, nextval('network_bus_id')
        from connected_line_structures;
 
+insert into external_converter_terminal (terminal_id, terminal_location,
+                                         station_id, network_bus_id, connection_line)
+     select distinct on (t.station_id)
+            s.station_id, n.station_location, t.station_id, t.network_bus_id,
+            st_makeline(n.station_location, n.station_location)
+       from station_terminal s
+       join topology_nodes n on s.station_id = n.station_id
+       join station_terminal t on s.station_id = t.station_id and s.network_bus_id <> t.network_bus_id
+      where s.converter and s.dc
+      order by t.station_id, t.voltage desc ;
+
 with isolated_converter_terminal as (
      select s.station_id
        from station_terminal s
@@ -163,7 +174,7 @@ insert into network_bus (bus_id, station_id, voltage, dc, symbol, under_construc
        join station_terminal t on t.station_id = n.station_id
   left join station_properties p on p.station_id = n.station_id
   left join external_converter_terminal e on e.terminal_id = t.station_id
-      where e.terminal_id is null or n.topology_name = 'Converter Station Back-to-back';
+      where e.terminal_id is null or not t.dc or n.topology_name = 'Converter Station Back-to-back';
       -- buses for which external converter terminals exist are skipped
 
 -- DC lines connect external terminals directly
