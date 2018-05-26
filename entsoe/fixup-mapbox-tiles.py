@@ -23,6 +23,7 @@ def sort_features(fn, features):
     for n, f in enumerate(t['features']):
         t = type_map[f['geometry']['type']]
         f['id'] = offset.setdefault(t, 0) + n
+
         features.setdefault(t, []).append(f)
 
     return features
@@ -62,7 +63,8 @@ def stitch_tiles(fn):
                             'Tie_line': 'tie_line',
                             'Text_': 'text_',
                             'LengthKm': 'shape_length'})
-    for f in ('visible', 'underground', 'tie_line', 'under_construction'):
+    df['tie_line'] = df['tie_line'].fillna(0.).astype(int)
+    for f in ('visible', 'underground', 'under_construction'):
         df[f] = df[f].astype(int)
     df['numberofcircuits'] = df['numberofcircuits'].astype(int)
     df['shape_length'] = df['shape_length'].astype(float)
@@ -91,12 +93,10 @@ def stitch_tiles(fn):
     def stitch_lines(a, b):
         if a.buffer(1e-2).contains(b):
             return a
-        if a.boundary.intersects(b.boundary):
-            return a if a.length > b.length else b
         p = a.intersection(b)
         if p.is_empty:
             d = a.distance(b)/(2-1e-2)
-            assert d < 1e-3
+            assert d < .5e-2
             p = a.buffer(d).intersection(b.buffer(d)).centroid
         p = p.representative_point()
         return LineString(up_to_point(a, p, b) + up_to_point(b, p, a)[::-1])
@@ -120,6 +120,8 @@ def stitch_tiles(fn):
                 return reduce(stitch_lines, p, df.geometry.iloc[0])
             except AssertionError:
                 pass
+        else:
+            raise Exception("Could not stitch lines with `oid = {}`".format(df.oid.iloc[0]))
 
     stitched = df.groupby('oid').apply(stitch_where_possible)
     df = gpd.GeoDataFrame(df.groupby('oid').first().assign(geometry=stitched)).reset_index()
