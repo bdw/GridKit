@@ -1,6 +1,6 @@
 #!/bin/bash
 
-BASE=${1-rusty}
+BASE=${1-entsoe}
 ZOOM=${2-6}
 
 python fixup-mapbox-tiles.py ${BASE} ${BASE}*-z${ZOOM}.geojson
