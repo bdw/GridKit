@@ -23,10 +23,10 @@ create table station_terminal (
 );
 
 create table external_converter_terminal (
-    terminal_id    integer primary key,
+    terminal_id     integer primary key,
     terminal_location geometry(point,3857),
-    station_id     integer not null,
-    network_bus_id         integer references station_terminal (network_bus_id),
+    station_id      integer not null,
+    network_bus_id  integer references station_terminal (network_bus_id),
     connection_line geometry(linestring,3857)
 );
 
@@ -147,7 +147,8 @@ create table network_generator (
     bus_id       integer not null references network_bus(bus_id),
     technology   text,
     capacity     numeric,
-    tags         hstore
+    tags         hstore,
+    geometry     text
     -- geometry     geometry(Point, 4326)
 );
 
@@ -233,15 +234,16 @@ insert into network_transformer (transformer_id, bus0, bus1)
       where not s.dc and not d.dc and n.topology_name != 'joint';
 
 -- Generators
--- insert into network_generator (generator_id, bus_id, technology, capacity, tags, geometry)
---      select g.generator_id,
---             (select network_bus_id from station_terminal t
---               where g.station_id = t.station_id order by voltage asc limit 1),
---             p.tags->'symbol', (p.tags->'mw')::numeric, p.tags - array['symbol','mw'],
---             st_transform(p.location, 4326)
---        from topology_generators g
---        join power_generator p on p.generator_id = g.generator_id;
-
+insert into network_generator (generator_id, bus_id, technology, capacity, tags, geometry)
+     select g.generator_id,
+            (   select coalesce(te.network_bus_id, t.network_bus_id)
+                  from station_terminal t
+             left join external_converter_terminal te on te.terminal_id = g.station_id
+                 where g.station_id = t.station_id order by voltage asc limit 1),
+            p.tags->'symbol', (p.tags->'capacity')::numeric, p.tags - array['symbol','capacity'],
+            st_astext(st_transform(p.location, 4326))
+       from topology_generators g
+       join power_generator p on p.generator_id = g.generator_id;
 
 
 commit;
