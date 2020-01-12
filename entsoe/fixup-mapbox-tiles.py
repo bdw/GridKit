@@ -133,24 +133,50 @@ def stitch_tiles(fn):
     return outfn
 
 def strip_duplicate_stations(fn):
-    df = gpd.read_file(fn)
-    df = df.rename(columns={'OBJECTID': 'oid',
-                            'ogc_fid': 'oid',
-                            'Under_cons': 'under_construction',
-                            'name_all': 'name',
-                            'Name_Eng': 'name',
-                            'Symbol': 'symbol',
-                            'Country': 'country',
-                            'Tie_line_s': 'tie_line_s',
-                            'Visible': 'visible',
-                            'MW': 'capacity',
-                            'mw': 'capacity'})
-    df['symbol'] = df['symbol'].str.split(',').str[0]
+    with open(fn) as fp:
+        f = geojson.load(fp)
+
+    key_map = {'OBJECTID': 'oid',
+                'ogc_fid': 'oid',
+                'Under_cons': 'under_construction',
+                'name_all': 'name',
+                'Name_Eng': 'name',
+                'Symbol': 'symbol',
+                'Country': 'country',
+                'Tie_line_s': 'tie_line_s',
+                'Visible': 'visible',
+                'MW': 'capacity',
+                'mw': 'capacity'}
+    seen_oids = set()
+    features = []
+
+    for feature in f['features']:
+        prop = feature['properties']
+        for old, new in key_map.items():
+            if old in prop:
+                prop[new] = prop.pop(old)
+
+        feature['id'] = oid = prop['oid']
+        if oid in seen_oids:
+            continue
+        seen_oids.add(oid)
+
+        if 'symbol' in prop:
+            prop['symbol'] = prop['symbol'].split(',', 1)[0]
+
+        if 'TSO' in prop:
+            prop['TSO'] = prop['TSO'].strip()
+
+        if 'EIC_code' in prop:
+            prop['EIC_code'] = prop['EIC_code'].strip()
+
+        features.append(feature)
+
+    f['features'] = features
 
     outfn = gen_outfn(fn, '-fixed')
-    (df[~df.duplicated(subset=['oid'], keep='first')]
-     .set_index('oid', drop=False)
-     .to_file(outfn, driver='GeoJSON'))
+    with open(outfn, 'w') as fp:
+        geojson.dump(f, fp)
     return outfn
 
 if __name__ == '__main__':
