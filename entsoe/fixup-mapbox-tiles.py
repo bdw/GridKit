@@ -1,4 +1,5 @@
 import fiona
+import numpy as np
 import pandas as pd
 import geopandas as gpd
 import geojson
@@ -6,7 +7,7 @@ from shapely.geometry import Point, LineString
 
 from six import iteritems
 from six.moves import reduce
-from itertools import count, permutations
+from itertools import chain, count, permutations
 import os, sys
 
 type_map = dict(MultiLineString="LineString",
@@ -39,6 +40,8 @@ def gen_outfn(fn, suffix, tmpdir=None):
 
     if tmpdir is not None:
         outfn = os.path.join(tmpdir, outfn)
+    else:
+        outfn = os.path.join(os.path.dirname(fn), outfn)
 
     if os.path.exists(outfn):
         os.unlink(outfn)
@@ -73,14 +76,13 @@ def stitch_tiles(fn):
     df.loc[uc_b, 'symbol'] = df.loc[uc_b, 'symbol'].str[:-len(' Under Construction')]
 
     # Break MultiLineStrings
-    extra = []
-    for i in count():
-        e = (df[df.type == 'MultiLineString']
-            .assign(geometry=lambda df: df.geometry.str[i])
-            .dropna(subset=['geometry']))
-        if e.empty: break
-        extra.append(e)
-    df = df[df.type != 'MultiLineString'].append(pd.concat(extra), ignore_index=True)
+    e = (df.loc[df.type == 'MultiLineString', 'geometry'])
+    if not e.empty:
+        extra = df.drop("geometry", axis=1).join(
+            pd.Series(chain(*e), np.repeat(e.index, e.map(len)), name="geometry"),
+            how="right"
+        )
+        df = df[df.type != 'MultiLineString'].append(extra, ignore_index=True)
 
     def up_to_point(l, p, other):
         if l.boundary[1].distance(other) > l.boundary[0].distance(other):
