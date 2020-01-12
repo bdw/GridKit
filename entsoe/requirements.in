@@ -1,0 +1,7 @@
+psycopg2-binary
+fiona
+pandas
+geopandas
+geojson
+shapely
+six
