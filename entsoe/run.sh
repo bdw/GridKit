@@ -21,7 +21,8 @@ psql -f ../src/topology-2-dangling-joints.sql
 
 psql -f electric-properties.sql
 # Fix edges which should not have been merged
-psql -f fixup-merge.sql
+# (only makes sense in conjunction with topology-3-redundant-splits)
+#psql -f fixup-merge.sql
 psql -f fixup-annotated-lines.sql
 
 psql -v hvdc_distance=$GRIDKIT_HVDC_DISTANCE \
