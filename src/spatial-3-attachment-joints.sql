@@ -92,7 +92,7 @@ update attached_lines
       and not st_dwithin(attachments, st_startpoint(old_extent), 1);
 
 update attached_lines
-    set new_extent = st_addpoint(new_extent, st_closestpoint(attachments, st_endpoint(new_extent)), -1)
+    set new_extent = st_addpoint(new_extent, st_closestpoint(attachments, st_endpoint(new_extent)))
     where st_contains(terminals, st_endpoint(old_extent))
       and not st_dwithin(attachments, st_endpoint(old_extent), 1);
 

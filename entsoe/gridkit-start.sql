@@ -85,9 +85,7 @@ insert into power_generator (generator_id, location, tags)
        from feature_points
       where properties->'symbol' not in (
                 'Substation',
-                'Substation, under construction',
                 'Converter Station',
-                'Converter Station, under construction',
                 'Converter Station Back-to-Back'
             );
 

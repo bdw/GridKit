@@ -12,3 +12,6 @@ __pycache__/
 *.o5m
 *.osm.pbf
 .R*
+.direnv
+entsoe/result
+entsoe/data

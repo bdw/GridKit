@@ -35,8 +35,8 @@ create table line_structure_conflicts (
 );
 
 insert into station_properties (station_id, symbol, name, under_construction, tags)
-     select power_id, properties->'symbol', properties->'name_all', (properties->'under_construction')::boolean,
-            properties - array['symbol','name_all','under_construction']
+     select power_id, properties->'symbol', properties->'name', (properties->'under_construction')::boolean,
+            properties - array['symbol','name','under_construction']
        from feature_points f
        join source_objects o on o.import_id = f.import_id and o.power_type = 's';
 
@@ -44,10 +44,10 @@ insert into line_structure (line_id, voltage, circuits, under_construction, unde
      select power_id,
             substring(properties->'voltagelevel' from '^[0-9]+')::int,
             (properties->'numberofcircuits')::int,
-            (properties->'underconstruction')::boolean,
+            (properties->'under_construction')::boolean,
             (properties->'underground')::boolean,
             (properties->'current' = 'DC'),
-            properties - array['voltagelevel','numberofcircuits','shape_length','underconstruction','underground','current']
+            properties - array['voltagelevel','numberofcircuits','shape_length','under_construction','underground','current']
        from feature_lines f
        join source_objects o on o.import_id = f.import_id and o.power_type = 'l';
 

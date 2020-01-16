@@ -34,11 +34,11 @@ insert into extended_lines (line_id, line_pt, old_extent, new_extent, locations)
 
 update extended_lines
    set new_extent = case when line_pt[1] = 1 then st_addpoint(new_extent, st_closestpoint(locations, st_startpoint(new_extent)), 0)
-                         else st_addpoint(new_extent, st_closestpoint(locations, st_endpoint(new_extent)), -1) end;
+                         else st_addpoint(new_extent, st_closestpoint(locations, st_endpoint(new_extent))) end;
 
 update extended_lines
    set new_extent = case when line_pt[2] = 1 then st_addpoint(new_extent, st_closestpoint(locations, st_startpoint(new_extent)), 0)
-                         else st_addpoint(new_extent, st_closestpoint(locations, st_endpoint(new_extent)), -1) end
+                         else st_addpoint(new_extent, st_closestpoint(locations, st_endpoint(new_extent))) end
    where array_length(line_pt, 1) = 2;
 
 insert into power_station (station_id, power_name, area)
